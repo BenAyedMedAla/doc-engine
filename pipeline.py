@@ -57,14 +57,11 @@ def _process_file(
     if cls == DocClass.OFFICE:
         result = _get_office_parse()(path)
 
-    elif cls == DocClass.IMAGE:
+    elif cls in (DocClass.IMAGE, DocClass.PDF_VLM_TEXT, DocClass.PDF_SHORT_SCAN):
         result = _get_vlm_parse(cfg)(path)
 
     elif cls == DocClass.PDF_SHORT_TEXT:
         result = _get_docling_parse()(path)
-
-    elif cls == DocClass.PDF_SHORT_SCAN:
-        result = _get_vlm_parse(cfg)(path)
 
     elif cls in (DocClass.PDF_LONG_TEXT, DocClass.PDF_LONG_SCAN):
         # Extract first N + last N pages → temp PDF, then parse that
@@ -79,10 +76,7 @@ def _process_file(
             f"(head {cfg.long_head_pages} + tail {cfg.long_tail_pages}) → {tmp.name}"
         )
 
-        if cls == DocClass.PDF_LONG_TEXT:
-            result = _get_docling_parse()(tmp)
-        else:
-            result = _get_vlm_parse(cfg)(tmp)
+        result = _get_vlm_parse(cfg)(tmp)
 
         # Overwrite source so the output filename matches the original
         result.source = path
@@ -123,6 +117,7 @@ def run(
                       (bypasses sorting; files must already be in sorted/)
     """
     cfg.ensure_dirs()
+    run_start = time.time()
 
     # ── 1. Sort input files ───────────────────────────────────────────────────
     if input_paths is None:
@@ -174,13 +169,22 @@ def run(
         else:
             err_count += 1
 
+    total_elapsed = time.time() - run_start
+    minutes, seconds = divmod(total_elapsed, 60)
+    elapsed_str = f"{int(minutes)}m {seconds:.1f}s" if minutes else f"{seconds:.1f}s"
+
     summary_path = cfg.output_dir / "_summary.json"
-    summary_path.write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+    summary_data = {
+        "total_elapsed_s": round(total_elapsed, 2),
+        "files": summary,
+    }
+    summary_path.write_text(json.dumps(summary_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     total = len(results)
     print(
-        f"\n── Done — {ok_count}/{total} succeeded, {err_count} errors\n"
-        f"   Output: {cfg.output_dir}\n"
+        f"\n── Done — {ok_count}/{total} succeeded, {err_count} errors  "
+        f"[total: {elapsed_str}]\n"
+        f"   Output:  {cfg.output_dir}\n"
         f"   Summary: {summary_path}\n"
     )
     return results

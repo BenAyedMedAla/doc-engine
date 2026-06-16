@@ -27,8 +27,12 @@ class Config:
     base_dir: Path = Path("/home/nullkuhl/docs")
 
     # ── PDF classification ────────────────────────────────────────────────────
-    # > long_pdf_threshold pages → treated as "long" (sample head+tail only)
-    long_pdf_threshold: int = 50
+    # Non-scanned PDFs: ≤ vlm_text_threshold pages → VLM (very short, best quality)
+    vlm_text_threshold: int = 10
+    # Non-scanned PDFs: > vlm_text_threshold and ≤ long_pdf_threshold → Docling
+    long_pdf_threshold: int = 200
+    # Scanned PDFs: > scanned_long_threshold pages → long (head+tail only)
+    scanned_long_threshold: int = 20
     # avg chars/page below this → classified as scanned
     scan_char_threshold: int = 50
     # how many evenly-spaced pages to sample for scanned detection
@@ -71,9 +75,10 @@ class Config:
             self.temp_dir,
             self.sorted_dir / "office",
             self.sorted_dir / "images",
-            self.sorted_dir / "pdfs" / "short_text",
-            self.sorted_dir / "pdfs" / "short_scanned",
-            self.sorted_dir / "pdfs" / "long_text",
-            self.sorted_dir / "pdfs" / "long_scanned",
+            self.sorted_dir / "pdfs" / "vlm_text",       # ≤10p non-scanned → VLM
+            self.sorted_dir / "pdfs" / "short_text",      # 11–50p non-scanned → Docling
+            self.sorted_dir / "pdfs" / "short_scanned",   # ≤20p scanned → VLM
+            self.sorted_dir / "pdfs" / "long_text",        # >50p non-scanned → Docling head+tail
+            self.sorted_dir / "pdfs" / "long_scanned",     # >20p scanned → VLM head+tail
         ]:
             path.mkdir(parents=True, exist_ok=True)

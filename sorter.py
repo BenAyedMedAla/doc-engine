@@ -18,6 +18,7 @@ from detector import DocClass, classify
 _CLASS_SUBDIR: dict[DocClass, tuple[str, ...]] = {
     DocClass.OFFICE:         ("office",),
     DocClass.IMAGE:          ("images",),
+    DocClass.PDF_VLM_TEXT:   ("pdfs", "vlm_text"),
     DocClass.PDF_SHORT_TEXT: ("pdfs", "short_text"),
     DocClass.PDF_SHORT_SCAN: ("pdfs", "short_scanned"),
     DocClass.PDF_LONG_TEXT:  ("pdfs", "long_text"),

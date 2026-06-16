@@ -20,10 +20,11 @@ from config import OFFICE_EXTENSIONS, IMAGE_EXTENSIONS, Config
 class DocClass(Enum):
     OFFICE          = auto()   # DOCX / XLSX / PPTX → Kreuzberg
     IMAGE           = auto()   # PNG / JPG / … → VLM
-    PDF_SHORT_TEXT  = auto()   # ≤ threshold pages, text layer → Docling
-    PDF_SHORT_SCAN  = auto()   # ≤ threshold pages, image-only → VLM
-    PDF_LONG_TEXT   = auto()   # > threshold pages, text layer → Docling (head+tail)
-    PDF_LONG_SCAN   = auto()   # > threshold pages, image-only → VLM (head+tail)
+    PDF_VLM_TEXT    = auto()   # ≤ vlm_text_threshold pages (10), text → VLM
+    PDF_SHORT_TEXT  = auto()   # (10, 200] pages, text → Docling
+    PDF_SHORT_SCAN  = auto()   # ≤ scanned_long_threshold pages (20), scanned → VLM
+    PDF_LONG_TEXT   = auto()   # > 50 pages, text → VLM (head+tail)
+    PDF_LONG_SCAN   = auto()   # > 20 pages, scanned → VLM (head+tail)
     UNKNOWN         = auto()
 
 
@@ -93,11 +94,16 @@ def classify(path: Path, cfg: Config) -> DocClass:
 
     if suf == ".pdf":
         info = analyze_pdf(path, cfg)
-        is_long = info.page_count > cfg.long_pdf_threshold
-        if is_long:
-            return DocClass.PDF_LONG_SCAN if info.is_scanned else DocClass.PDF_LONG_TEXT
+        if info.is_scanned:
+            if info.page_count > cfg.scanned_long_threshold:
+                return DocClass.PDF_LONG_SCAN
+            return DocClass.PDF_SHORT_SCAN
         else:
-            return DocClass.PDF_SHORT_SCAN if info.is_scanned else DocClass.PDF_SHORT_TEXT
+            if info.page_count <= cfg.vlm_text_threshold:
+                return DocClass.PDF_VLM_TEXT
+            if info.page_count > cfg.long_pdf_threshold:
+                return DocClass.PDF_LONG_TEXT
+            return DocClass.PDF_SHORT_TEXT
 
     return DocClass.UNKNOWN
 
