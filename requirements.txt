@@ -1,0 +1,28 @@
+# All packages are already installed in:
+#   /home/nullkuhl/docling-kreuzberg-benchmark-1/myenv
+#
+# To recreate in a fresh venv:
+#   python3 -m venv .venv
+#   source .venv/bin/activate
+#   pip install -r requirements.txt
+
+# ── Core parsers ──────────────────────────────────────────────────────────────
+docling>=2.10.0          # PDF + table extraction (GPU via torch)
+kreuzberg[all]>=4.9.0   # Office docs (DOCX / XLSX / PPTX)
+
+# ── PDF introspection & image rendering ──────────────────────────────────────
+pypdfium2>=5.0.0         # Fast XRef page count, page-to-image rendering
+
+# ── VLM API client ────────────────────────────────────────────────────────────
+openai>=1.0.0            # OpenAI-compatible client (works with vLLM)
+
+# ── Image handling ────────────────────────────────────────────────────────────
+Pillow>=10.0.0
+
+# ── OCR backends (in priority order for Arabic) ───────────────────────────────
+easyocr>=1.7.0           # GPU-accelerated, strong Arabic support
+# tesseract-ocr + tesseract-ocr-ara installed via:
+#   sudo apt install tesseract-ocr tesseract-ocr-ara tesseract-ocr-eng
+
+# ── GPU acceleration ──────────────────────────────────────────────────────────
+torch>=2.0.0             # CUDA support for Docling layout + TableFormer

@@ -1,0 +1,42 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+
+# ── Virtual environments ──────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+myenv/
+.env
+
+# ── Workspace data (docs/ tree) ───────────────────────────────────────────────
+# Never commit input documents, intermediate files, or extracted outputs
+docs/
+
+# ── Temp extraction files ─────────────────────────────────────────────────────
+*.tmp
+_sample_*.pdf
+
+# ── Pipeline outputs ──────────────────────────────────────────────────────────
+output/
+_summary.json
+
+# ── Secrets / config overrides ───────────────────────────────────────────────
+.env
+*.local.py
+secrets.py
+
+# ── OS noise ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
