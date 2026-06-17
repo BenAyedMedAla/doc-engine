@@ -82,6 +82,13 @@ def _process_file(
         result.source = path
         tmp.unlink(missing_ok=True)
 
+    elif cls == DocClass.UNKNOWN:
+        print(f"    [pipeline] WARNING: could not determine page count for {path.name} — skipping (encrypted or corrupted)")
+        return ParseResult(
+            source=path, parser="none", content="",
+            error="unreadable PDF: page count is 0 after all fallbacks (encrypted or corrupted)",
+        )
+
     else:
         return ParseResult(
             source=path, parser="none", content="",

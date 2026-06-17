@@ -36,15 +36,53 @@ class PdfInfo(NamedTuple):
 # ── PDF introspection ─────────────────────────────────────────────────────────
 
 def pdf_page_count(path: Path) -> int:
-    """Read page count from the PDF XRef/catalog — O(1), no rendering."""
+    """
+    Return page count via 3 escalating strategies:
+    1. pypdfium2 XRef /Count  — O(1), works on well-formed PDFs
+    2. PyMuPDF (fitz)         — repairs damaged XRef, handles incremental saves
+    3. Brute-force iteration  — walks pages one by one until failure
+    Returns 0 only when all three fail (truly unreadable / encrypted).
+    """
+    # Strategy 1: pypdfium2 XRef read
     try:
         import pypdfium2 as pdfium
         doc = pdfium.PdfDocument(str(path))
         n = len(doc)
         doc.close()
-        return n
+        if n > 0:
+            return n
     except Exception:
-        return 0
+        pass
+
+    # Strategy 2: PyMuPDF — robust repair heuristics, handles stale /Count
+    try:
+        import fitz
+        doc = fitz.open(str(path))
+        n = doc.page_count
+        doc.close()
+        if n > 0:
+            return n
+    except Exception:
+        pass
+
+    # Strategy 3: brute-force — iterate pages until one fails
+    try:
+        import pypdfium2 as pdfium
+        doc = pdfium.PdfDocument(str(path))
+        n = 0
+        for i in range(9999):
+            try:
+                _ = doc[i]
+                n += 1
+            except Exception:
+                break
+        doc.close()
+        if n > 0:
+            return n
+    except Exception:
+        pass
+
+    return 0
 
 
 def pdf_is_scanned(path: Path, sample: int = 5, threshold: int = 50) -> bool:
@@ -94,6 +132,8 @@ def classify(path: Path, cfg: Config) -> DocClass:
 
     if suf == ".pdf":
         info = analyze_pdf(path, cfg)
+        if info.page_count == 0:
+            return DocClass.UNKNOWN
         if info.is_scanned:
             if info.page_count > cfg.scanned_long_threshold:
                 return DocClass.PDF_LONG_SCAN
