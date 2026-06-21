@@ -1,0 +1,89 @@
+---
+source: Cyber Security OKRs View 21a624291278806793acda2755481c99.pdf
+parser: docling
+pages: 13
+gpu: True
+---
+
+<!-- image -->
+
+## Cyber Security OKRs View
+
+## Objectives and Key Results Database
+
+<!-- image -->
+
+<!-- image -->
+
+| Key Results                                                                      | Objectives                                                       | Quarter         |   Current |   Quarter Target | Progress   | Status   |
+|----------------------------------------------------------------------------------|------------------------------------------------------------------|-----------------|-----------|------------------|------------|----------|
+| PCI DSS Complete recertificati on to maintain compliance                        | Operational Resilience and Cybersecur ity Manageme               | Q1 2025 Q2 2025 |       100 |              100 | 100%       | Done     |
+| CBUAE Information Assurance: Conduct the first gap assessment with vendors       | Strengthen Operational Resilience and Cybersecur ity Manageme nt | Q1 2025         |       100 |              100 | 100%       | Done     |
+| Cybersecuri ty Maturity KSA Executing Maturity Level 3 Maintenanc e Plan for Q1 | Strengthen Operational Resilience and Cybersecur ity Manageme nt | Q1 2025         |        90 |              100 | 90%        | Done     |
+
+<!-- image -->
+
+| Key Results                                                                                                                | Objectives                                                       | Quarter   |   Current |   Quarter Target | Progress   | Status       |
+|----------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------|-----------|-----------|------------------|------------|--------------|
+| Cybersecuri ty Maturity KSA Executing Maturity Level 3 Maintenanc e Plan for Q2                                           | Strengthen Operational Resilience and Cybersecur ity Manageme nt | Q2 2025   |       100 |              100 | 100%       | Done         |
+| Evaluate at least two AIPowered GRC tools and launch a Slack- integrated internal AI assistant, in alignment with Project | Strengtheni ng GRC Foundation and Platforms                      | Q2 2025   |       100 |              100 | 100%       | Done         |
+| Complete ISO 27001 gap assessment, and implement at least 75% of required controls by end of Q2.                           | Strengthen Operational Resilience and Cybersecur ity Manageme nt | Q2 2025   |         0 |               75 | 0%         | To be Pushed |
+| Select and initiate onboarding of a PAM                                                                                    | Strengthen Operational Resilience and                            | Q2 2025   |        20 |              100 | 20%        | To be Pushed |
+
+| Key Results                                                                                                                                                                           | Objectives                                                                  | Quarter   |   Current |   Quarter Target | Progress   | Status   |
+|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|-----------|-----------|------------------|------------|----------|
+| (Privileged Access Managemen t Solution) vendor, after testing at least two shortlisted solutions Strengthen cross- functional security support to uplift infrastructur e resilience, | Cybersecur ity Manageme nt Strengthen Operational Resilience and Cybersecur | Q3 2025   |       100 |              100 | 100%       | Done     |
+| Elevate endpoint security posture and streamline security governance across release pipelines                                                                                         | Strengthen Operational Resilience and Cybersecur ity Manageme nt            | Q3 2025   |       100 |              100 | 100%       | Done     |
+
+| Key Results                                                                                                                                               | Objectives                                                       | Quarter   |   Current |   Quarter Target | Progress   | Status   |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------|-----------|-----------|------------------|------------|----------|
+| automation layers by the end of Q3 2025.                                                                                                                  |                                                                  |           |           |                  |            |          |
+| Advance the Tamaraʼs cyber defense capabilities and readiness through enhanced threat detection, monitoring coverage, and security validation planning by | Strengthen Operational Resilience and Cybersecur ity Manageme nt | Q3 2025   |       100 |              100 | 100%       | Done     |
+| Complete PDPL compliance assessment via an approved third-party provider and submit findings to SAMA as mandated to maintain                              | Strengthen Operational Resilience and Cybersecur ity Manageme nt | Q3 2025   |       100 |              100 | 100%       | Done     |
+
+| Key Results                                                                                                                      | Objectives                                                       | Quarter   |   Current |   Quarter Target | Progress   | Status   |
+|----------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------|-----------|-----------|------------------|------------|----------|
+| regulatory compliance.                                                                                                           |                                                                  |           |           |                  |            |          |
+| Complete market scan of at least three DLP (Data Loss Prevention) vendors and submit final recommend ation to replace SkyHigh by | Strengthen Operational Resilience and Cybersecur ity Manageme nt | Q3 2025   |       100 |              100 | 100%       | Done     |
+| Obtain SAMA NOC for Zoho and support IT with testing and onboarding of Zoho Workplace in Q3                                      | Strengthen Operational Resilience and Cybersecur ity Manageme nt | Q3 2025   |       100 |              100 | 100%       | Done     |
+
+| Key Results                                                                                          | Objectives                                                       | Quarter   |   Current |   Quarter Target | Progress   | Status      |
+|------------------------------------------------------------------------------------------------------|------------------------------------------------------------------|-----------|-----------|------------------|------------|-------------|
+| Execute and complete all Q3 tasks listed in the SAMA Maturity Level 3 Maintenanc e Plan by end of Q3 | Strengthen Operational Resilience and Cybersecur ity Manageme nt | Q3 2025   |        44 |               44 | 100%       | Done        |
+| Delivery  Conduct a thorough Revamp & Restructure on Admin Panel Access Roles Company-             | Enhance Cyber Security Governance Risk and Compliance Expanded) | Q4 2025   |         0 |              100 | 0%         | In Progress |
+| Delivery  Onboard CyberArrow or GRC tool & complete Configuratio n                                  | Enhance Cyber Security Governance Risk and Compliance Expanded) | Q4 2025   |         0 |              100 | 0%         | In Progress |
+| Delivery  Log and respond to 100% of SAMA requests received in                                      | Enhance Cyber Security Governance Risk and Compliance Expanded) | Q4 2025   |         0 |              100 | 0%         | In Progress |
+
+| Key Results                                                                                                                                                                                    | Objectives                                                       | Quarter   |   Current |   Quarter Target | Progress   | Status      |
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------|-----------|-----------|------------------|------------|-------------|
+| Q4 on or before the committed due dates, with evidence and internal approvals recorded in the tracker                                                                                          |                                                                  |           |           |                  |            |             |
+| Delivery  Reformat and improve all Cyber Security Policies using the approved template, obtain sign- off from the designated authority for each policy, and update the Policy Register/Ind ex | Enhance Cyber Security Governance Risk and Compliance Expanded) | Q4 2025   |         0 |              100 | 0%         | In Progress |
+| Delivery  Complete 100% of due milestones in the ML3 execution plan 0 overdue                                                                                                                | Enhance Cyber Security Governance Risk and Compliance Expanded) | Q4 2025   |         0 |              100 | 0%         | In Progress |
+
+| Key Results                                                                                                                                                                                              | Objectives                                                  | Quarter   |   Current |   Quarter Target | Progress   | Status      |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------|-----------|-----------|------------------|------------|-------------|
+| actions) and submit an updated evidence pack for each closed milestone Delivery  Run a hands-on trial and cost/compli ance comparison to decide whether to move from LogRhythm to ElasticSearc h ELK; | Enhance Infrastructu re and Application Security Expanded) | Q4 2025   |         0 |              100 | 0%         | In Progress |
+| Establish  Rollout daily/weekly AIPower Security Test Agent to cover 10 high-risk                                                                                                                     | Enhance Infrastructu re and Application Security Expanded) | Q4 2025   |         0 |              100 | 0%         | In Progress |
+
+| Key Results                                                                                                                                                                                                                                            | Objectives                                       | Quarter   |   Current |   Quarter Target | Progress   | Status      |
+|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------|-----------|-----------|------------------|------------|-------------|
+| public systems with weekly reports and auto-tickets; complete Q4 VA and meet fix- time targets (as defined by policy). Delivery  Finish the 2025 VAPT security testing (ethical hacking + Red Team with SecurEyes), triage 100% of findings within 10 | Enhance Infrastructu re and Application Security | Q4 2025   |         0 |              100 | 0%         | In Progress |
+| Delivery  Cover 98% of production cloud                                                                                                                                                                                                              | Enhance Infrastructu re and Application          | Q4 2025   |         0 |              100 | 0%         | In Progress |
+
+| Key Results                                                                                                                                                      | Objectives                                                                 | Quarter   |   Current |   Quarter Target | Progress   | Status      |
+|------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------|-----------|-----------|------------------|------------|-------------|
+| systems with SentinelOne , run 95% in block/prote ct mode, and issue a monthly tuning summary showing false alerts                                              | Security Expanded)                                                        |           |           |                  |            |             |
+| Establish  Create a central repository for all SAMA advisories, log 100% of advisories received, ensure responses are provided on time, and track a monthly KPI | Enhance Cyber Security Operational Resilience & Monitoring Expanded view) | Q4 2025   |         0 |              100 | 0%         | In Progress |
+| Establish  Set up monitoring and rules for AI tools LLMProxy),                                                                                                 | Enhance Cyber Security Operational Resilience & Monitoring                 | Q4 2025   |         0 |              100 | 0%         | In Progress |
+
+| Key Results                                                                                                                                                                                                                       | Objectives                                                                 | Quarter   |   Current |   Quarter Target | Progress   | Status      |
+|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------|-----------|-----------|------------------|------------|-------------|
+| activate at least 10 protective rules, and ensure dashboards and alerts are live for 3 high-risk use cases                                                                                                                        | Expanded view)                                                            |           |           |                  |            |             |
+| by Delivery  Procure and implement a new Data Loss Prevention DLP solution to replace Skyhigh, ensure baseline policies are active, achieve coverage of at least 80% of company devices and priority applications , and retire | Enhance Cyber Security Operational Resilience & Monitoring Expanded view) | Q4 2025   |         0 |              100 | 0%         | In Progress |
+| Delivery  Enable                                                                                                                                                                                                                 | Enhance Cyber                                                              | Q4 2025   |         0 |              100 | 0%         | In Progress |
+
+| Key Results                                                                                                            | Objectives                                                                 | Quarter   |   Current |   Quarter Target | Progress   | Status      |
+|------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------|-----------|-----------|------------------|------------|-------------|
+| automated security risk checks in release/cha nge workflows with SecBot automations ; achieve 90% production release  | Security Operational Resilience & Monitoring Expanded view)               |           |           |                  |            |             |
+| Delivery  Deploy 3 major SOC use cases (e.g., GRC tools, Zoho, CTM360, GCP and onboard 2 major log sources to SIEM | Enhance Cyber Security Operational Resilience & Monitoring Expanded view) | Q4 2025   |         0 |              100 | 0%         | In Progress |
+| Delivery  Conduct 3 SOC Effectivenes s Tests and deliver an Automatic SOC Red Team PoC & rollout plan                | Enhance Cyber Security Operational Resilience & Monitoring Expanded view) | Q4 2025   |         0 |              100 | 0%         | In Progress |
