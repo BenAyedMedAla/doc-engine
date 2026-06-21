@@ -50,3 +50,6 @@ engine-rs/target/release/.fingerprint
 engine-rs/target/release/deps
 engine-rs/target/release/build
 engine-rs/target/debug/incremental/engine_rs-0bzrl9k3rlo1c
+
+.d
+.cargo-lock
