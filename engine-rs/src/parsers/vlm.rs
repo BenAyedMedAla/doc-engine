@@ -4,7 +4,6 @@ use anyhow::Result;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use tokio::task::JoinSet;
 use crate::config::Config;
-use crate::detector::{python_cmd, scripts_dir};
 use crate::parsers::ParseResult;
 
 /// Full prompt for page 1: identify document type, visual elements, then full content.
@@ -37,14 +36,14 @@ Extract the full content of this page as Markdown:
 - List any visual elements (stamps, signatures, logos) briefly";
 
 /// Entry point — wraps errors into a ParseResult rather than propagating.
-pub async fn parse(path: &Path, cfg: &Config) -> ParseResult {
-    match parse_inner(path, cfg).await {
+pub async fn parse(path: &Path, cfg: &Config, sem: Arc<tokio::sync::Semaphore>) -> ParseResult {
+    match parse_inner(path, cfg, sem).await {
         Ok(r) => r,
         Err(e) => ParseResult::error_result(path.to_path_buf(), "vlm", e.to_string()),
     }
 }
 
-async fn parse_inner(path: &Path, cfg: &Config) -> Result<ParseResult> {
+async fn parse_inner(path: &Path, cfg: &Config, sem: Arc<tokio::sync::Semaphore>) -> Result<ParseResult> {
     let ext = path
         .extension()
         .and_then(|e| e.to_str())
@@ -63,9 +62,12 @@ async fn parse_inner(path: &Path, cfg: &Config) -> Result<ParseResult> {
         anyhow::bail!("No pages rendered from {}", path.display());
     }
 
-    let client = Arc::new(reqwest::Client::new());
+    let client = Arc::new(
+        reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(120))
+            .build()?,
+    );
     let cfg_arc = Arc::new(cfg.clone());
-    let sem = Arc::new(tokio::sync::Semaphore::new(cfg.vlm_max_workers));
 
     let mut join_set: JoinSet<(usize, Result<String>)> = JoinSet::new();
 
@@ -135,25 +137,9 @@ async fn parse_inner(path: &Path, cfg: &Config) -> Result<ParseResult> {
     })
 }
 
-/// Render all pages of a PDF to base64 PNG strings via the Python/pypdfium2 helper.
-/// Returns (vec_of_b64, page_count).
+/// Render all pages of a PDF to base64 PNG strings using pdfium (pure Rust, no subprocess).
 fn render_pdf_pages(path: &Path, cfg: &Config) -> Result<(Vec<String>, u32)> {
-    let output = std::process::Command::new(python_cmd())
-        .arg(scripts_dir().join("render_pdf.py"))
-        .arg(path)
-        .arg(cfg.vlm_image_dpi.to_string())
-        .output()?;
-
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("render_pdf.py failed: {err}");
-    }
-
-    let pages: Vec<String> = serde_json::from_slice(&output.stdout)
-        .map_err(|e| anyhow::anyhow!("render_pdf.py returned invalid JSON: {e}"))?;
-
-    let count = pages.len() as u32;
-    Ok((pages, count))
+    crate::pdf_render::render_pages(path, cfg.vlm_image_dpi, cfg.pdfium_path.as_deref())
 }
 
 async fn call_vlm_with_retry(
@@ -196,6 +182,7 @@ async fn call_vlm_once(
     let body = serde_json::json!({
         "model": cfg.vlm_model,
         "max_tokens": cfg.vlm_max_tokens,
+        "chat_template_kwargs": { "enable_thinking": false },
         "messages": [
             {
                 "role": "user",
@@ -231,11 +218,15 @@ async fn call_vlm_once(
 
     let json: serde_json::Value = resp.json().await?;
 
-    let text = json
-        .pointer("/choices/0/message/content")
-        .and_then(|v| v.as_str())
+    let msg = &json["choices"][0]["message"];
+    let text = msg["content"].as_str()
+        .or_else(|| msg["reasoning"].as_str())
         .unwrap_or("")
         .to_string();
+
+    if text.is_empty() {
+        anyhow::bail!("VLM returned empty content: {}", json);
+    }
 
     Ok(text)
 }

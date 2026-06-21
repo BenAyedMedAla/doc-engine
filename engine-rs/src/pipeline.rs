@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 use anyhow::Result;
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 use walkdir::WalkDir;
 use crate::config::Config;
 use crate::detector::{classify, extract_pdf_pages, DocClass};
@@ -37,32 +40,41 @@ pub async fn run(
 
     println!("Processing {} files...", files.len());
     let pipeline_start = Instant::now();
-    let mut results = Vec::new();
 
-    for path in &files {
-        let file_start = Instant::now();
-        let cls = classify(path, cfg);
-        let name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("?");
+    // Global semaphore — caps total concurrent VLM vision requests to protect GPU memory.
+    let vlm_sem = Arc::new(Semaphore::new(cfg.vlm_max_workers));
 
+    let mut join_set: JoinSet<(ParseResult, f64, String)> = JoinSet::new();
+
+    for path in files {
+        let cfg = cfg.clone();
+        let sem = Arc::clone(&vlm_sem);
+        let cls = classify(&path, &cfg);
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("?").to_string();
         println!("  [{}] {}", cls.as_str(), name);
 
-        let result = process_file(path, cls, cfg).await;
+        join_set.spawn(async move {
+            let t = Instant::now();
+            let result = process_file(&path, cls, &cfg, sem).await;
+            (result, t.elapsed().as_secs_f64(), name)
+        });
+    }
 
-        let elapsed = file_start.elapsed().as_secs_f64();
+    let mut results = Vec::new();
+
+    while let Some(join_result) = join_set.join_next().await {
+        let (result, elapsed, name) = join_result?;
         if result.ok() {
-            println!("    ok  {:.1}s", elapsed);
+            println!("    ok  {:.1}s  {}", elapsed, name);
             result.save(&cfg.output_dir()).ok();
         } else {
             println!(
-                "    err {:.1}s  {}",
+                "    err {:.1}s  {}  — {}",
                 elapsed,
+                name,
                 result.error.as_deref().unwrap_or("unknown")
             );
         }
-
         results.push(result);
     }
 
@@ -82,18 +94,17 @@ pub async fn run(
 
 /// Process a single file: classify, route to the right parser.
 /// Public so main.rs can call it for --file mode.
-pub async fn process_file(path: &Path, cls: DocClass, cfg: &Config) -> ParseResult {
+pub async fn process_file(path: &Path, cls: DocClass, cfg: &Config, vlm_sem: Arc<Semaphore>) -> ParseResult {
     match cls {
         DocClass::Office => office::parse(path),
 
         DocClass::Image | DocClass::PdfVlmText | DocClass::PdfShortScan => {
-            vlm::parse(path, cfg).await
+            vlm::parse(path, cfg, vlm_sem).await
         }
 
         DocClass::PdfShortText => docling::parse(path),
 
         DocClass::PdfLongText | DocClass::PdfLongScan => {
-            // Extract first N + last N pages into a temp PDF, then send to VLM
             let stem = path
                 .file_stem()
                 .and_then(|s| s.to_str())
@@ -112,8 +123,7 @@ pub async fn process_file(path: &Path, cls: DocClass, cfg: &Config) -> ParseResu
                     format!("page extraction failed: {e}"),
                 ),
                 Ok(_) => {
-                    let mut result = vlm::parse(&temp_path, cfg).await;
-                    // Restore original source path in the result
+                    let mut result = vlm::parse(&temp_path, cfg, vlm_sem).await;
                     result.source = path.to_path_buf();
                     let _ = std::fs::remove_file(&temp_path);
                     result

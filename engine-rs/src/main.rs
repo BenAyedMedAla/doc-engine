@@ -1,6 +1,7 @@
 mod config;
 mod detector;
 mod parsers;
+mod pdf_render;
 mod pipeline;
 mod sorter;
 
@@ -54,6 +55,10 @@ struct Cli {
     /// DPI used when rendering PDF pages to images
     #[arg(long)]
     vlm_dpi: Option<u32>,
+
+    /// Path to libpdfium.so (auto-detected from PDFIUM_PATH env / active venv if not set)
+    #[arg(long)]
+    pdfium_path: Option<String>,
 }
 
 #[tokio::main]
@@ -89,6 +94,9 @@ async fn main() -> anyhow::Result<()> {
     if let Some(dpi) = cli.vlm_dpi {
         cfg.vlm_image_dpi = dpi;
     }
+    if let Some(p) = cli.pdfium_path {
+        cfg.pdfium_path = Some(p);
+    }
 
     if let Some(file_path) = cli.file {
         // Single-file mode: classify → process → save
@@ -96,7 +104,8 @@ async fn main() -> anyhow::Result<()> {
         let cls = detector::classify(&file_path, &cfg);
         println!("Classified as: {}", cls.as_str());
 
-        let result = pipeline::process_file(&file_path, cls, &cfg).await;
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(cfg.vlm_max_workers));
+        let result = pipeline::process_file(&file_path, cls, &cfg, sem).await;
         if result.ok() {
             let out = result.save(&cfg.output_dir())?;
             println!("Saved: {}", out.display());

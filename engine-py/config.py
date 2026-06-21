@@ -43,7 +43,7 @@ class Config:
     long_tail_pages: int = 10
 
     # ── VLM endpoint (OpenAI-compatible, e.g. vLLM) ───────────────────────────
-    vlm_base_url: str = "http://197.46.212.11:8000/v1"
+    vlm_base_url: str = "http://127.0.0.1:8000/v1"
     vlm_model: str = "Qwen/Qwen3.6-27B-FP8"
     vlm_max_tokens: int = 8192
     vlm_image_dpi: int = 200        # render DPI for PDF → image conversion

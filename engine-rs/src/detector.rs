@@ -136,34 +136,25 @@ pub fn classify(path: &Path, cfg: &Config) -> DocClass {
     DocClass::Unknown
 }
 
-/// Extract head + tail pages into a new PDF using the Python/pypdfium2 helper.
+/// Extract head + tail pages into a new PDF using lopdf (pure Rust, no subprocess).
 pub fn extract_pdf_pages(src: &Path, dst: &Path, head: u32, tail: u32) -> Result<u32> {
-    let output = std::process::Command::new(python_cmd())
-        .arg(scripts_dir().join("extract_pdf_pages.py"))
-        .arg(src)
-        .arg(dst)
-        .arg(head.to_string())
-        .arg(tail.to_string())
-        .output()?;
-
-    if !output.status.success() {
-        let err = String::from_utf8_lossy(&output.stderr);
-        anyhow::bail!("extract_pdf_pages failed: {err}");
-    }
-
-    let count: u32 = String::from_utf8_lossy(&output.stdout)
-        .trim()
-        .parse()
-        .unwrap_or(0);
-    Ok(count)
+    crate::pdf_render::extract_pages(src, dst, head, tail)
 }
 
-/// Locate the scripts/ directory next to the running binary.
+/// Locate the scripts/ directory. Walks up from the binary to find it,
+/// so it works whether the binary lives in target/release/ or next to scripts/.
 pub fn scripts_dir() -> PathBuf {
-    std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.join("scripts")))
-        .unwrap_or_else(|| PathBuf::from("scripts"))
+    if let Ok(exe) = std::env::current_exe() {
+        let mut dir = exe.as_path();
+        while let Some(parent) = dir.parent() {
+            let candidate = parent.join("scripts");
+            if candidate.is_dir() {
+                return candidate;
+            }
+            dir = parent;
+        }
+    }
+    PathBuf::from("scripts")
 }
 
 pub fn python_cmd() -> &'static str {

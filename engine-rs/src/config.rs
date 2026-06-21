@@ -15,6 +15,9 @@ pub struct Config {
     pub long_head_pages: u32,
     pub long_tail_pages: u32,
 
+    // Path to libpdfium.so (overrides PDFIUM_PATH env / auto-discovery)
+    pub pdfium_path: Option<String>,
+
     // VLM endpoint (OpenAI-compatible)
     pub vlm_base_url: String,
     pub vlm_model: String,
@@ -29,6 +32,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             base_dir: PathBuf::from("/home/nullkuhl/docs"),
+            pdfium_path: None,
             vlm_text_threshold: 10,
             long_pdf_threshold: 200,
             scanned_long_threshold: 20,

@@ -40,3 +40,13 @@ desktop.ini
 .idea/
 *.swp
 *.swo
+
+/parsers
+
+engine-rs/target/debug/.fingerprint
+engine-rs/target/debug/build
+engine-rs/target/debug/deps
+engine-rs/target/release/.fingerprint
+engine-rs/target/release/deps
+engine-rs/target/release/build
+engine-rs/target/debug/incremental/engine_rs-0bzrl9k3rlo1c
