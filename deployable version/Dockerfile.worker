@@ -1,0 +1,29 @@
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# System deps: Python 3.11, Tesseract (Arabic + English), runtime libs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3.11 python3.11-dev python3-pip \
+        tesseract-ocr tesseract-ocr-ara tesseract-ocr-eng \
+        libgomp1 libglib2.0-0 libsm6 libxext6 libxrender-dev \
+        libgl1 poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
+
+# Copy the full application
+COPY core/           core/
+COPY worker/         worker/
+COPY storage/        storage/
+COPY schemas.py      .
+COPY settings.py     .
+COPY logging_config.py .
+
+CMD ["celery", "-A", "worker.celery_app", "worker", \
+     "--loglevel=info", "--concurrency=2", "-E"]
