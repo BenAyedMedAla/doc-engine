@@ -5,6 +5,8 @@ Sort every file in input/ into its appropriate sorted/ subfolder.
 Classification is per-file: page count + text-layer sampling for PDFs,
 extension matching for Office docs and images.  No file content is parsed
 beyond what detector.py reads (XRef metadata + sampled text layer).
+
+Classification runs sequentially — pypdfium2's C library is not thread-safe.
 """
 from __future__ import annotations
 
@@ -53,6 +55,7 @@ def sort_input(cfg: Config) -> dict[DocClass, list[Path]]:
         print("  [sorter] input/ is empty — nothing to sort")
         return result
 
+    # Classify sequentially — pypdfium2's C library is not thread-safe
     for src in files:
         cls = classify(src, cfg)
         if cls == DocClass.UNKNOWN:
