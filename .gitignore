@@ -3,7 +3,6 @@ __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
-.Python
 *.so
 
 # ── Virtual environments ──────────────────────────────────────────────────────
@@ -13,8 +12,11 @@ env/
 myenv/
 .env
 
+# ── Rust build artifacts ──────────────────────────────────────────────────────
+target/
+*.d
+
 # ── Workspace data (docs/ tree) ───────────────────────────────────────────────
-# Never commit input documents, intermediate files, or extracted outputs
 docs/
 
 # ── Temp extraction files ─────────────────────────────────────────────────────
@@ -23,10 +25,15 @@ _sample_*.pdf
 
 # ── Pipeline outputs ──────────────────────────────────────────────────────────
 output/
+output-v2/
 _summary.json
 
+# ── Extracted document .md files at repo root (belong in docs/output/ only) ──
+/*.md
+!README.md
+!benchmark-comparison.md
+
 # ── Secrets / config overrides ───────────────────────────────────────────────
-.env
 *.local.py
 secrets.py
 
@@ -40,16 +47,3 @@ desktop.ini
 .idea/
 *.swp
 *.swo
-
-/parsers
-
-engine-rs/target/debug/.fingerprint
-engine-rs/target/debug/build
-engine-rs/target/debug/deps
-engine-rs/target/release/.fingerprint
-engine-rs/target/release/deps
-engine-rs/target/release/build
-engine-rs/target/debug/incremental/engine_rs-0bzrl9k3rlo1c
-
-.d
-.cargo-lock

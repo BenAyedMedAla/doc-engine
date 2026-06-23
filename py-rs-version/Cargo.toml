@@ -1,0 +1,18 @@
+[package]
+name = "doc-engine"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "doc-engine"
+path = "src/main.rs"
+
+[dependencies]
+clap        = { version = "4",    features = ["derive"] }
+tokio       = { version = "1",    features = ["full"] }
+rayon       = "1"
+lopdf       = "0.34"
+serde       = { version = "1",    features = ["derive"] }
+serde_json  = "1"
+walkdir     = "2"
+anyhow      = "1"
