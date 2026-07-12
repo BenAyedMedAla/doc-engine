@@ -26,3 +26,8 @@ easyocr>=1.7.0           # GPU-accelerated, strong Arabic support
 
 # ── GPU acceleration ──────────────────────────────────────────────────────────
 torch>=2.0.0             # CUDA support for Docling layout + TableFormer
+
+# ── Backend API (api.py) ──────────────────────────────────────────────────────
+fastapi>=0.110.0
+uvicorn>=0.29.0
+python-multipart>=0.0.9   # required for multipart/form-data file uploads
