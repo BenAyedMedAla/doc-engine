@@ -112,17 +112,19 @@ def _process_file(
     result = ParseResult(
         source=original_path,
         parser=json_data.get("parser", "unknown"),
-        content="",           # subprocess already wrote the .md file
+        content="",           # subprocess already wrote the .txt file
         page_count=json_data.get("pages"),
         extras={
-            "elapsed_s":   round(elapsed, 2),
-            "table_count": json_data.get("table_count"),
+            "elapsed_s":    round(elapsed, 2),
+            "table_count":  json_data.get("table_count"),
+            "cpu_fallback": json_data.get("cpu_fallback", False),
         },
         error=error,
     )
 
     if result.ok:
-        print(f"    ✓  {original_path.name}  →  {original_path.stem}.md  ({elapsed:.1f}s)")
+        fallback_tag = "  [CPU FALLBACK]" if result.extras.get("cpu_fallback") else ""
+        print(f"    ✓  {original_path.name}  →  {original_path.stem}.txt  ({elapsed:.1f}s){fallback_tag}")
     else:
         print(f"    ✗  {original_path.name}  ERROR: {result.error}")
 
@@ -214,13 +216,14 @@ def run(
     ok_count = err_count = 0
     for r in results:
         summary.append({
-            "source":      r.source.name,
-            "parser":      r.parser,
-            "pages":       r.page_count,
-            "ok":          r.ok,
-            "error":       r.error,
-            "elapsed_s":   r.extras.get("elapsed_s"),
-            "table_count": r.extras.get("table_count"),
+            "source":       r.source.name,
+            "parser":       r.parser,
+            "pages":        r.page_count,
+            "ok":           r.ok,
+            "error":        r.error,
+            "elapsed_s":    r.extras.get("elapsed_s"),
+            "table_count":  r.extras.get("table_count"),
+            "cpu_fallback": r.extras.get("cpu_fallback", False),
         })
         if r.ok:
             ok_count += 1

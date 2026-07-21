@@ -23,11 +23,11 @@ class ParseResult:
 
     def save(self, output_dir: Path) -> Path:
         output_dir.mkdir(parents=True, exist_ok=True)
-        out = output_dir / (self.source.stem + ".md")
+        out = output_dir / (self.source.stem + ".txt")
         if out.exists():
             i = 1
             while out.exists():
-                out = output_dir / f"{self.source.stem}_{i}.md"
+                out = output_dir / f"{self.source.stem}_{i}.txt"
                 i += 1
         out.write_text(self.content, encoding="utf-8")
         return out
@@ -35,10 +35,11 @@ class ParseResult:
     def emit(self) -> None:
         """Print a single JSON line to stdout — read by the Rust orchestrator."""
         print(json.dumps({
-            "ok":          self.ok,
-            "parser":      self.parser,
-            "pages":       self.page_count,
-            "error":       self.error,
-            "table_count": self.extras.get("table_count"),
+            "ok":           self.ok,
+            "parser":       self.parser,
+            "pages":        self.page_count,
+            "error":        self.error,
+            "table_count":  self.extras.get("table_count"),
+            "cpu_fallback": self.extras.get("cpu_fallback", False),
         }, ensure_ascii=False))
         sys.stdout.flush()

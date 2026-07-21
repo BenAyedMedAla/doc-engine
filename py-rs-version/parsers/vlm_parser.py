@@ -118,19 +118,54 @@ def _pil_to_b64(img) -> str:
     return "data:image/png;base64," + base64.standard_b64encode(buf.getvalue()).decode()
 
 
-def _pdf_page_to_b64(path: Path, page_idx: int, dpi: int) -> str:
+def _pdf_page_to_pil(path: Path, page_idx: int, dpi: int):
     import pypdfium2 as pdfium
     doc    = pdfium.PdfDocument(str(path))
     page   = doc[page_idx]
     bitmap = page.render(scale=dpi / 72.0)
     pil    = bitmap.to_pil()
     doc.close()
-    return _pil_to_b64(pil)
+    return pil
 
 
-def _image_to_b64(path: Path) -> str:
+def _image_to_pil(path: Path):
     from PIL import Image
-    return _pil_to_b64(Image.open(str(path)))
+    return Image.open(str(path)).convert("RGB")
+
+
+# ── CPU OCR fallback (used when the VLM request fails after all retries) ──────
+# Keeps a page from silently coming back empty when the GPU/vLLM server has a
+# problem — degrades to local Tesseract OCR instead of losing the page.
+
+def _cpu_ocr_fallback(pil_img) -> str:
+    import subprocess
+    import tempfile
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+            pil_img.save(tmp.name, format="PNG")
+            proc = subprocess.run(
+                ["tesseract", tmp.name, "stdout", "-l", "ara+eng", "--psm", "3"],
+                capture_output=True, text=True, timeout=120,
+            )
+        text = (proc.stdout or "").strip()
+        return text if text else "*(CPU OCR fallback produced no text)*"
+    except Exception as exc:
+        return f"*(CPU OCR fallback also failed: {exc})*"
+
+
+def _call_page_with_fallback(client, args, pil_img, is_first: bool) -> tuple[str, bool]:
+    """Returns (content, used_cpu_fallback)."""
+    b64_url = _pil_to_b64(pil_img)
+    try:
+        return _call_page(client, args, b64_url, is_first), False
+    except Exception as exc:
+        print(f"    [vlm] page error, falling back to CPU OCR: {exc}", file=sys.stderr)
+        ocr_text = _cpu_ocr_fallback(pil_img)
+        note = (
+            "> ⚠ VLM request failed — recovered via CPU OCR fallback (Tesseract).\n"
+            "> Visual-element detection and table structure are unavailable for this page.\n\n"
+        )
+        return note + ocr_text, True
 
 
 # ── VLM API call ──────────────────────────────────────────────────────────────
@@ -174,27 +209,29 @@ def _call_page(client, args, b64_url: str, is_first: bool) -> str:
 
 # ── PDF / image extraction ────────────────────────────────────────────────────
 
-def _extract_pdf(client, args, path: Path) -> tuple[str, int, int]:
+def _extract_pdf(client, args, path: Path) -> tuple[str, int, int, bool]:
     import pypdfium2 as pdfium
     doc        = pdfium.PdfDocument(str(path))
     page_count = len(doc)
     doc.close()
 
-    b64_urls = [_pdf_page_to_b64(path, i, args.vlm_dpi) for i in range(page_count)]
+    pil_pages = [_pdf_page_to_pil(path, i, args.vlm_dpi) for i in range(page_count)]
 
     results: list[str] = [""] * page_count
+    fallback_used = [False] * page_count
     with ThreadPoolExecutor(max_workers=args.vlm_workers) as pool:
         futures = {
-            pool.submit(_call_page, client, args, url, i == 0): i
-            for i, url in enumerate(b64_urls)
+            pool.submit(_call_page_with_fallback, client, args, img, i == 0): i
+            for i, img in enumerate(pil_pages)
         }
         for future in as_completed(futures):
             idx = futures[future]
             try:
-                results[idx] = future.result()
+                results[idx], fallback_used[idx] = future.result()
             except Exception as exc:
-                print(f"    [vlm] page {idx + 1} error: {exc}", file=sys.stderr)
-                results[idx] = f"\n\n> ⚠ Page {idx + 1} extraction failed: {exc}\n\n"
+                print(f"    [vlm] page {idx + 1} failed completely: {exc}", file=sys.stderr)
+                results[idx] = f"\n\n> ⚠ Page {idx + 1} extraction failed (VLM and CPU fallback both failed): {exc}\n\n"
+                fallback_used[idx] = True
 
     parts: list[str] = []
     for i, text in enumerate(results):
@@ -205,13 +242,14 @@ def _extract_pdf(client, args, path: Path) -> tuple[str, int, int]:
         parts.append(text)
 
     combined = _strip_bidi("".join(parts))
-    return combined, _count_md_tables(combined), page_count
+    return combined, _count_md_tables(combined), page_count, any(fallback_used)
 
 
-def _extract_image(client, args, path: Path) -> tuple[str, int, int]:
-    b64_url = _image_to_b64(path)
-    text    = _strip_bidi(_call_page(client, args, b64_url, is_first=True))
-    return text, _count_md_tables(text), 1
+def _extract_image(client, args, path: Path) -> tuple[str, int, int, bool]:
+    pil_img = _image_to_pil(path)
+    text, used_fallback = _call_page_with_fallback(client, args, pil_img, is_first=True)
+    text = _strip_bidi(text)
+    return text, _count_md_tables(text), 1, used_fallback
 
 
 # ── Parser ────────────────────────────────────────────────────────────────────
@@ -223,9 +261,9 @@ def parse(path: Path, args) -> ParseResult:
 
         suf = path.suffix.lower()
         if suf == ".pdf":
-            content, table_count, page_count = _extract_pdf(client, args, path)
+            content, table_count, page_count, used_fallback = _extract_pdf(client, args, path)
         else:
-            content, table_count, page_count = _extract_image(client, args, path)
+            content, table_count, page_count, used_fallback = _extract_image(client, args, path)
 
         header = (
             f"---\n"
@@ -233,13 +271,14 @@ def parse(path: Path, args) -> ParseResult:
             f"parser: vlm\n"
             f"model: {args.vlm_model}\n"
             f"pages: {page_count}\n"
+            f"cpu_fallback: {used_fallback}\n"
             f"---\n\n"
         )
 
         return ParseResult(
             source=path, parser="vlm",
             content=header + content, page_count=page_count,
-            extras={"table_count": table_count},
+            extras={"table_count": table_count, "cpu_fallback": used_fallback},
         )
 
     except Exception as exc:
@@ -253,7 +292,7 @@ def main() -> None:
     p.add_argument("--input",      type=Path,  required=True)
     p.add_argument("--output-dir", type=Path,  required=True)
     p.add_argument("--vlm-url",     default="http://127.0.0.1:8000/v1")
-    p.add_argument("--vlm-model",   default="Qwen/Qwen3.6-27B-FP8")
+    p.add_argument("--vlm-model",   default="Qwen/Qwen3.5-9B")
     p.add_argument("--vlm-tokens",  type=int,   default=8192)
     p.add_argument("--vlm-dpi",     type=int,   default=200)
     p.add_argument("--vlm-workers", type=int,   default=4)

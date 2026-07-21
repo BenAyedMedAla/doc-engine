@@ -38,7 +38,7 @@ def main() -> None:
     t_start = time.time()
 
     cfg = Config()
-    cfg.vlm_model = "qwen3.6-27b-awq"  # actual model id served at cfg.vlm_base_url
+    cfg.vlm_model = "Qwen/Qwen3.5-9B"  # actual model id served at cfg.vlm_base_url
     cfg.ensure_dirs()
 
     all_files = sorted(

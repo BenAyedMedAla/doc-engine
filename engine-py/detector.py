@@ -20,8 +20,8 @@ from config import OFFICE_EXTENSIONS, IMAGE_EXTENSIONS, Config
 class DocClass(Enum):
     OFFICE          = auto()   # DOCX / XLSX / PPTX → Kreuzberg
     IMAGE           = auto()   # PNG / JPG / … → VLM
-    PDF_VLM_TEXT    = auto()   # ≤ vlm_text_threshold pages (10), text → VLM
-    PDF_SHORT_TEXT  = auto()   # (10, 200] pages, text → Docling
+    PDF_VLM_TEXT    = auto()   # ≤ vlm_text_threshold pages (4), text → VLM
+    PDF_SHORT_TEXT  = auto()   # (4, 200] pages, text → Docling
     PDF_SHORT_SCAN  = auto()   # ≤ scanned_long_threshold pages (20), scanned → VLM
     PDF_LONG_TEXT   = auto()   # > 50 pages, text → VLM (head+tail)
     PDF_LONG_SCAN   = auto()   # > 20 pages, scanned → VLM (head+tail)

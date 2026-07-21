@@ -27,8 +27,14 @@ class Config:
     base_dir: Path = Path("/home/nullkuhl/docs")
 
     # ── PDF classification ────────────────────────────────────────────────────
-    # Non-scanned PDFs: ≤ vlm_text_threshold pages → VLM (very short, best quality)
-    vlm_text_threshold: int = 10
+    # Non-scanned PDFs: ≤ vlm_text_threshold pages → VLM (very short, best quality).
+    # Narrowed from 10 to 4: VLM is per-page (multiple round-trips to the shared
+    # vLLM server, ~127s/file avg), while Docling batches pages into one GPU call
+    # (~31s/file avg) and never touches the vLLM request queue — shifting 5-10p
+    # docs to Docling reduces both wall-clock and vLLM contention, at the cost of
+    # Docling's plainer output for those docs (no visual-element cataloguing,
+    # embedded images become bare placeholders instead of described).
+    vlm_text_threshold: int = 4
     # Non-scanned PDFs: > vlm_text_threshold and ≤ long_pdf_threshold → Docling
     long_pdf_threshold: int = 200
     # Scanned PDFs: > scanned_long_threshold pages → long (head+tail only)
@@ -44,7 +50,11 @@ class Config:
 
     # ── VLM endpoint (OpenAI-compatible, e.g. vLLM) ───────────────────────────
     vlm_base_url: str = "http://127.0.0.1:8000/v1"
-    vlm_model: str = "Qwen/Qwen3.6-27B-FP8"
+    # Right-sized for this box's single L4 (23 GB VRAM) — the 27B model doesn't
+    # fit alongside Docling, which shares the same GPU concurrently (see
+    # pipeline.py's _DOCLING_SLOTS/_VLM_SLOTS). Served via vLLM's `--quantization
+    # fp8` (dynamic FP8, ~9-9.5 GB weights), not a separate pre-quantized checkpoint.
+    vlm_model: str = "Qwen/Qwen3.5-9B"
     vlm_max_tokens: int = 8192
     vlm_image_dpi: int = 200        # render DPI for PDF → image conversion
     vlm_max_workers: int = 4        # parallel page requests to the VLM server
@@ -75,8 +85,8 @@ class Config:
             self.temp_dir,
             self.sorted_dir / "office",
             self.sorted_dir / "images",
-            self.sorted_dir / "pdfs" / "vlm_text",       # ≤10p non-scanned → VLM
-            self.sorted_dir / "pdfs" / "short_text",      # 11–50p non-scanned → Docling
+            self.sorted_dir / "pdfs" / "vlm_text",       # ≤4p non-scanned → VLM
+            self.sorted_dir / "pdfs" / "short_text",      # 5–200p non-scanned → Docling
             self.sorted_dir / "pdfs" / "short_scanned",   # ≤20p scanned → VLM
             self.sorted_dir / "pdfs" / "long_text",        # >50p non-scanned → Docling head+tail
             self.sorted_dir / "pdfs" / "long_scanned",     # >20p scanned → VLM head+tail

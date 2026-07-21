@@ -72,6 +72,7 @@ class FileState:
     elapsed_s: float | None = None
     error: str | None = None
     markdown: str | None = None
+    cpu_fallback: bool = False
 
 
 @dataclass
@@ -128,13 +129,14 @@ def _process_batch(batch_id: str, cfg: Config, input_paths: list[Path]) -> None:
             if state is None:
                 continue
             if r.ok:
-                md_path = cfg.output_dir / (r.source.stem + ".md")
+                txt_path = cfg.output_dir / (r.source.stem + ".txt")
                 state.status = "ok"
                 state.parser = r.parser
                 state.pages = r.page_count
                 state.table_count = r.extras.get("table_count")
                 state.elapsed_s = r.extras.get("elapsed_s")
-                state.markdown = md_path.read_text(encoding="utf-8") if md_path.exists() else None
+                state.cpu_fallback = bool(r.extras.get("cpu_fallback", False))
+                state.markdown = txt_path.read_text(encoding="utf-8") if txt_path.exists() else None
             else:
                 state.status = "error"
                 state.parser = r.parser
@@ -160,6 +162,7 @@ class FileStatusOut(BaseModel):
     table_count: int | None = None
     elapsed_s: float | None = None
     error: str | None = None
+    cpu_fallback: bool = False
 
 
 class BatchStatusOut(BaseModel):
@@ -179,6 +182,7 @@ class FileResultOut(BaseModel):
     table_count: int | None = None
     error: str | None = None
     markdown: str | None = None
+    cpu_fallback: bool = False
 
 
 class BatchResultOut(BaseModel):
@@ -257,6 +261,7 @@ def get_batch_status(batch_id: str):
                     filename=s.filename, status=s.status, parser=s.parser,
                     pages=s.pages, table_count=s.table_count,
                     elapsed_s=s.elapsed_s, error=s.error,
+                    cpu_fallback=s.cpu_fallback,
                 )
                 for s in batch.files.values()
             ],
@@ -279,6 +284,7 @@ def get_batch_result(batch_id: str):
                     filename=s.filename, status=s.status, parser=s.parser,
                     pages=s.pages, table_count=s.table_count,
                     error=s.error, markdown=s.markdown,
+                    cpu_fallback=s.cpu_fallback,
                 )
                 for s in batch.files.values()
             ],

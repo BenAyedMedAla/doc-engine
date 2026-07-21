@@ -110,6 +110,11 @@ def _render_nodes(nodes: list, indices: list[int], depth: int = 0) -> str:
             md = _render_table(content)
             if md:
                 parts.append(md)
+        elif nt == "image":
+            # Matches Docling's placeholder convention — positional marker only,
+            # no content description (that would need a VLM call per image).
+            desc = (content.get("description") or "").strip()
+            parts.append(f"<!-- image -->\n{desc}" if desc else "<!-- image -->")
 
     return "\n\n".join(p for p in parts if p)
 

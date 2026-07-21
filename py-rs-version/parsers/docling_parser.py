@@ -91,11 +91,22 @@ def _get_accelerator():
 
 # ── OCR backend (only for Arabic Presentation Form fallback) ──────────────────
 
-def _pick_ocr_options():
+def _pick_ocr_options(*, use_gpu: bool):
+    """
+    use_gpu=False is required for the CPU-fallback pipeline: EasyOcrOptions
+    with use_gpu=True will try CUDA internally even when attached to the CPU
+    PdfPipelineOptions, which defeats the whole point of falling back (an
+    OOM'd GPU conversion would just OOM a second time inside "CPU" OCR).
+    """
     try:
         import easyocr  # noqa
         from docling.datamodel.pipeline_options import EasyOcrOptions
-        for kwargs in [{"lang": ["ar", "en"], "use_gpu": True}, {"lang": ["ar", "en"]}]:
+        attempts = (
+            [{"lang": ["ar", "en"], "use_gpu": True}, {"lang": ["ar", "en"]}]
+            if use_gpu else
+            [{"lang": ["ar", "en"], "use_gpu": False}]
+        )
+        for kwargs in attempts:
             try:
                 return EasyOcrOptions(**kwargs)
             except Exception:
@@ -115,6 +126,9 @@ def _pick_ocr_options():
                 return TesseractCliOcrOptions(**kwargs)
             except Exception:
                 continue
+
+    if not use_gpu:
+        return None
 
     try:
         from docling.datamodel.pipeline_options import RapidOcrOptions
@@ -139,10 +153,17 @@ def _build_converters() -> dict:
 
     acc      = _get_accelerator()
     on_gpu   = acc is not None
-    layout_bs = 8 if on_gpu else 1
-    table_bs  = 4 if on_gpu else 1
-    ocr_bs    = 4 if on_gpu else 1
-    ocr_opts  = _pick_ocr_options()
+    # Re-tuned for a 23 GB L4 (was 8/4/4, sized for a 97 GB RTX PRO 6000).
+    # Docling runs concurrently with a resident vLLM process on this same GPU
+    # (pipeline.py's _DOCLING_SLOTS/_VLM_SLOTS), so it only gets a slice of VRAM.
+    layout_bs = 2 if on_gpu else 1
+    table_bs  = 2 if on_gpu else 1
+    ocr_bs    = 2 if on_gpu else 1
+    # Separate OCR option objects for the GPU and CPU pipelines — the CPU
+    # fallback must not carry a GPU-enabled EasyOCR backend, or an OOM'd GPU
+    # conversion just OOMs a second time "inside" the CPU fallback.
+    ocr_opts_gpu = _pick_ocr_options(use_gpu=True)
+    ocr_opts_cpu = _pick_ocr_options(use_gpu=False)
     table_opts = TableStructureOptions(mode=TableFormerMode.ACCURATE)
 
     def _pipe(*, do_ocr: bool, force_ocr: bool = False) -> PdfPipelineOptions:
@@ -155,8 +176,8 @@ def _build_converters() -> dict:
             table_structure_options=table_opts,
             document_timeout=600,
         )
-        if do_ocr and ocr_opts is not None:
-            kw["ocr_options"]    = ocr_opts
+        if do_ocr and ocr_opts_gpu is not None:
+            kw["ocr_options"]    = ocr_opts_gpu
             kw["ocr_batch_size"] = ocr_bs
         if force_ocr:
             kw["force_full_page_ocr"] = True
@@ -172,15 +193,24 @@ def _build_converters() -> dict:
             InputFormat.PDF: PdfFormatOption(pipeline_options=pipe),
         })
 
-    # CPU fallback (used on CUDA OOM or CUDA errors)
+    # CPU fallback (used on CUDA OOM or CUDA errors) — genuinely CPU-only,
+    # including its OCR backend. Docling auto-detects CUDA is available
+    # system-wide regardless of what we pass here, so accelerator_options
+    # must be explicitly forced to CPU — merely omitting it is not enough
+    # (that was the original bug: the "CPU" pipeline still tried CUDA and
+    # OOM'd a second time after the GPU pipeline already OOM'd once).
+    from docling.datamodel.pipeline_options import AcceleratorOptions, AcceleratorDevice
+    cpu_acc = AcceleratorOptions(device=AcceleratorDevice.CPU)
+
     def _pipe_cpu(*, do_ocr: bool, force_ocr: bool = False) -> PdfPipelineOptions:
         kw: dict = dict(
             do_ocr=do_ocr, do_table_structure=True, images_scale=3.0,
             layout_batch_size=1, table_batch_size=1,
             table_structure_options=table_opts, document_timeout=600,
+            accelerator_options=cpu_acc,
         )
-        if do_ocr and ocr_opts is not None:
-            kw["ocr_options"] = ocr_opts
+        if do_ocr and ocr_opts_cpu is not None:
+            kw["ocr_options"] = ocr_opts_cpu
         if force_ocr:
             kw["force_full_page_ocr"] = True
         return PdfPipelineOptions(**kw)
@@ -218,14 +248,15 @@ def _convert(conv_pair, path: Path):
             pass
         return result, False
     except Exception as e:
-        msg = str(e)
-        if any(kw in msg for kw in ("CUDA", "cuda", "kernel image", "OutOfMemory", "out of memory")):
-            try:
-                import torch; torch.cuda.empty_cache()
-            except Exception:
-                pass
-            return cpu_conv.convert(str(path)), True
-        raise
+        # Any GPU-path failure falls back to CPU rather than only specific
+        # CUDA/OOM substrings — the GPU is shared with a resident vLLM process
+        # on this box, so contention can surface as many different error types.
+        print(f"  [docling] GPU conversion failed ({e!r}) — falling back to CPU", file=sys.stderr)
+        try:
+            import torch; torch.cuda.empty_cache()
+        except Exception:
+            pass
+        return cpu_conv.convert(str(path)), True
 
 
 # ── Parser ────────────────────────────────────────────────────────────────────
@@ -238,13 +269,17 @@ def parse(path: Path) -> ParseResult:
         doc  = result.document
         text = _strip_bidi(doc.export_to_text() or "")
 
+        # Reassign used_cpu (not discard it) — whichever conversion actually
+        # produced the `doc` we go on to use is the one whose GPU/CPU status
+        # must be reported, or "gpu: True" can end up on output that was
+        # really recovered via the CPU fallback.
         if _garbage_ratio(text) > 0.01:
-            result2, _ = _convert(convs["force_ocr"], path)
-            doc  = result2.document
+            result, used_cpu = _convert(convs["force_ocr"], path)
+            doc  = result.document
             text = _strip_bidi(doc.export_to_text() or "")
         elif _arabic_pf_ratio(text) > 0.3:
-            result3, _ = _convert(convs["force_ocr"], path)
-            doc  = result3.document
+            result, used_cpu = _convert(convs["force_ocr"], path)
+            doc  = result.document
             text = _strip_bidi(doc.export_to_text() or "")
 
         text = _nfkc(text)
@@ -265,7 +300,7 @@ def parse(path: Path) -> ParseResult:
         return ParseResult(
             source=path, parser="docling",
             content=header + md, page_count=page_count,
-            extras={"table_count": len(tables), "gpu": not used_cpu},
+            extras={"table_count": len(tables), "gpu": not used_cpu, "cpu_fallback": used_cpu},
         )
 
     except Exception as exc:

@@ -22,13 +22,13 @@ class ParseResult:
         return self.error is None
 
     def save(self, output_dir: Path) -> Path:
-        """Write content to <output_dir>/<stem>.md, deduplicating if needed."""
+        """Write content to <output_dir>/<stem>.txt, deduplicating if needed."""
         output_dir.mkdir(parents=True, exist_ok=True)
-        out = output_dir / (self.source.stem + ".md")
+        out = output_dir / (self.source.stem + ".txt")
         if out.exists():
             i = 1
             while out.exists():
-                out = output_dir / f"{self.source.stem}_{i}.md"
+                out = output_dir / f"{self.source.stem}_{i}.txt"
                 i += 1
         out.write_text(self.content, encoding="utf-8")
         return out
