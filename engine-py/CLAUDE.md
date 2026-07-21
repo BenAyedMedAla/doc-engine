@@ -34,7 +34,7 @@ python main.py --file /path/to/document.pdf
 python main.py --no-sort
 
 # Override workspace root / VLM endpoint / thresholds
-python main.py --base-dir /data/docs --vlm-url http://localhost:8000/v1 --vlm-model Qwen/Qwen3.6-27B-FP8
+python main.py --base-dir /data/docs --vlm-url http://localhost:8000/v1 --vlm-model Qwen/Qwen3.5-9B
 python main.py --long-threshold 200 --head 10 --tail 10 --scan-threshold 50
 
 # Run the batch REST API (single process, no Celery/Redis — see api.py docstring)
@@ -60,8 +60,8 @@ Pipeline stages, in order:
    - `_DOCLING_SLOTS = 1` — GPU-bound; 2+ concurrent Docling processes cause VRAM OOM
    - `_VLM_SLOTS = 4` — I/O-bound network calls to the vLLM server
    
-   A `ThreadPoolExecutor(max_workers=13)` (sum of the slots above) submits all files; each thread blocks on the relevant semaphore, then `subprocess.run()`s the parser script and parses one trailing JSON line from its stdout for status/page count/table count. Parser stdout is otherwise ignored — the parser subprocess writes the `.md` file directly to `output_dir`.
-5. **Summary** — `<base_dir>/output/_summary.json`, written once after all subprocesses complete: per-file parser/pages/ok/error/elapsed_s/table_count plus total elapsed time.
+   A `ThreadPoolExecutor(max_workers=13)` (sum of the slots above) submits all files; each thread blocks on the relevant semaphore, then `subprocess.run()`s the parser script and parses one trailing JSON line from its stdout for status/page count/table count/cpu_fallback. Parser stdout is otherwise ignored — the parser subprocess writes the `.txt` file directly to `output_dir`.
+5. **Summary** — `<base_dir>/output/_summary.json`, written once after all subprocesses complete: per-file parser/pages/ok/error/elapsed_s/table_count/cpu_fallback plus total elapsed time.
 
 ### Routing table (`DocClass` → parser)
 
@@ -83,6 +83,16 @@ In `pipeline.py`, only `OFFICE` and `PDF_SHORT_TEXT` map to a named script (`off
 - Docling: detects Arabic Presentation Forms (old visual-order Unicode, U+FB50–FEFF) — if >30% of Arabic characters are in that range, it re-runs with forced OCR to get correct logical order, then applies NFKC normalization.
 - Kreuzberg (Office): Tesseract `ara+eng`, LSTM-only (`oem=1`), PSM 3; if >2% of extracted characters fall outside Arabic/Latin ranges, forces a second OCR pass.
 - VLM: system prompt explicitly instructs RTL-correct verbatim reproduction of Arabic text; a bidi-control-character stripper (`_BIDI` regex) runs on all parser output.
+
+### GPU → CPU fallback (each parser handles this differently)
+
+- **Docling**: `_convert()` wraps every GPU conversion attempt in try/except — any exception falls back to a CPU-only `DocumentConverter`. The CPU pipeline forces `AcceleratorOptions(device=AcceleratorDevice.CPU)` explicitly and uses a separate `EasyOcrOptions(use_gpu=False)` — merely omitting `accelerator_options` is not enough, since Docling auto-detects CUDA is available system-wide and will still try to use it internally (this caused a real double-OOM in production before being fixed). `parse()` reassigns `used_cpu` from whichever conversion (native or force_ocr) actually produced the final `doc`, not just the first attempt — the fallback flag must reflect the actual source of the output.
+- **VLM**: if a page request fails after all retries (`_call_vision`), `_call_page_with_fallback` degrades to local Tesseract OCR (`_cpu_ocr_fallback`, shelling out to the `tesseract` CLI) on that page's already-rendered image, rather than leaving the page empty or erroring the whole file.
+- Both paths set `extras["cpu_fallback"]` on the `ParseResult`, which flows through `common.py`'s `.emit()` JSON → `pipeline.py`'s `_process_file`/summary → `_summary.json`'s per-file `cpu_fallback` field, so a batch report can show which files degraded.
+
+### Embedded images (Office docs and native PDFs)
+
+Kreuzberg's document tree already contains an `image` node type (with `description`/`image_index`) regardless of whether `ExtractionConfig.images` is set — `office_parser.py`'s `_render_nodes()` renders it as an `<!-- image -->` placeholder (matching Docling's `export_to_markdown()` convention, which does the same by default). This is a **positional marker only** — neither parser describes what's actually in the image; that would require an extra VLM call per image, which isn't wired up.
 
 ### `api.py` batch model
 
