@@ -3,15 +3,16 @@
 Main pipeline orchestrator — subprocess model.
 
 Each parser runs as an isolated subprocess with its own Python interpreter,
-completely bypassing the GIL. This mirrors what the Rust orchestrator does
-and gives true parallelism for all parser types.
+completely bypassing the GIL, giving true parallelism for all parser types.
 
-Concurrency (same limits as the Rust orchestrator):
+Concurrency:
   - Office  : 8 concurrent  (CPU-only, sub-second)
   - Docling : 1 concurrent  (GPU-bound — 2+ causes VRAM OOM)
   - VLM     : 4 concurrent  (I/O-bound, network to vLLM server)
 
-Parser scripts are reused from py-rs-version/parsers/.
+Parser scripts live in ./parsers/ (self-contained — the ../py-rs-version/
+Rust orchestrator keeps its own separate copy of the same scripts; the two
+are independent from here on, not shared at runtime).
 pypdfium2 (classification + long-PDF extraction) stays in the main thread
 because the C library is not thread-safe.
 """
@@ -37,7 +38,7 @@ _VLM_SLOTS     = threading.Semaphore(4)
 
 # ── Parser script locations ───────────────────────────────────────────────────
 
-_PARSERS_DIR = Path(__file__).parent.parent / "py-rs-version" / "parsers"
+_PARSERS_DIR = Path(__file__).parent / "parsers"
 
 _SCRIPT: dict[DocClass, str] = {
     DocClass.OFFICE:        "office_parser.py",

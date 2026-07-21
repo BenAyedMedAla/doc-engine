@@ -1,36 +1,33 @@
 #!/usr/bin/env python3
 """
-Office document parser — DOCX / XLSX / PPTX → structured Markdown.
+Kreuzberg parser — DOCX / XLSX / PPTX → structured Markdown.
+Invoked as a subprocess by pipeline.py.
 
-Uses Kreuzberg with:
-  - Tesseract ara+eng OCR (oem=1 LSTM, psm=3)
-  - TATR table model with heuristics
-  - Full document-tree rendering: headings, paragraphs, lists, tables as
-    GFM pipe-tables
-  - Garbage detection: if > 2% non-Arabic/Latin characters → force re-OCR
+Usage:
+  python3 office_parser.py --input <file> --output-dir <dir>
 
-GPU note: Kreuzberg's bundled ONNX Runtime tries CUDA by default; on
-Blackwell (sm_120) the ORT library aborts at the C++ boundary before
-Python can catch it.  CUDA_VISIBLE_DEVICES="" forces CPU execution for
-ORT while leaving the rest of the system GPU-free to use.
+Prints one JSON line to stdout on completion (read by the orchestrator).
 """
 from __future__ import annotations
 
+import argparse
 import os
 import re
+import sys
 from pathlib import Path
 
-# Must be set before kreuzberg imports (ORT is loaded at import time).
+sys.path.insert(0, str(Path(__file__).parent))
+from common import ParseResult
+
+# Must be set before kreuzberg imports — ORT is loaded at import time.
+# Blackwell (sm_120) aborts at the C++ boundary; CPU is stable.
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 
-from parsers import ParseResult
-
-# ── Bidi / garbage helpers (identical to benchmark) ──────────────────────────
+# ── Bidi / garbage helpers ────────────────────────────────────────────────────
 
 _BIDI = re.compile(r"[\u200E\u200F\u202A-\u202E\u2066-\u2069؜﻿]")
 _GARBAGE_RE = re.compile(
-    r"[^\x01-ɏ؀-ۿݐ-ݿࢠ-ࣿ"
-    r" -⁯\s]"
+    r"[^\x01-ɏ؀-ۿݐ-ݿࢠ-ࣿ -⁯\s]"
 )
 
 
@@ -83,13 +80,11 @@ def _render_nodes(nodes: list, indices: list[int], depth: int = 0) -> str:
             text = content.get("text", "").strip()
             if text:
                 parts.append(text)
-
         elif nt == "heading":
             text  = (content.get("heading_text") or content.get("text", "")).strip()
             level = content.get("heading_level", 2)
             if text:
                 parts.append("#" * level + " " + text)
-
         elif nt == "group":
             heading = (content.get("heading_text") or "").strip()
             level   = content.get("heading_level", 2)
@@ -103,22 +98,18 @@ def _render_nodes(nodes: list, indices: list[int], depth: int = 0) -> str:
             sub = _render_nodes(nodes, non_heading, depth + 1)
             if sub:
                 parts.append(sub)
-
         elif nt == "list":
             sub = _render_nodes(nodes, children, depth + 1)
             if sub:
                 parts.append(sub)
-
         elif nt == "list_item":
             text = content.get("text", "").strip()
             if text:
                 parts.append("- " + text)
-
         elif nt == "table":
             md = _render_table(content)
             if md:
                 parts.append(md)
-
         elif nt == "image":
             # Matches Docling's placeholder convention — positional marker only,
             # no content description (that would need a VLM call per image).
@@ -142,33 +133,7 @@ def _render_document(doc: dict | None, fallback: str) -> str:
     return _strip_bidi(rendered) if rendered.strip() else fallback
 
 
-# ── Kreuzberg config (built once, reused) ────────────────────────────────────
-
-def _build_kreuzberg_configs():
-    import kreuzberg
-
-    tess = kreuzberg.TesseractConfig(
-        language="ara+eng",
-        oem=1,              # LSTM only — more accurate than combined for Arabic
-        psm=3,
-        min_confidence=0.3,
-    )
-    ocr    = kreuzberg.OcrConfig(backend="tesseract", tesseract_config=tess)
-    layout = kreuzberg.LayoutDetectionConfig(
-        apply_heuristics=True,
-        table_model="tatr",
-        confidence_threshold=0.5,
-    )
-    acc    = kreuzberg.AccelerationConfig(provider="cpu")
-    pdf    = kreuzberg.PdfConfig(allow_single_column_tables=True, extract_metadata=True)
-    lang   = kreuzberg.LanguageDetectionConfig(enabled=True, detect_multiple=True, min_confidence=0.5)
-
-    base = dict(ocr=ocr, layout=layout, acceleration=acc,
-                include_document_structure=True, pdf_options=pdf, language_detection=lang)
-    cfg_normal = kreuzberg.ExtractionConfig(**base)
-    cfg_force  = kreuzberg.ExtractionConfig(**base, force_ocr=True)
-    return cfg_normal, cfg_force
-
+# ── Kreuzberg config (singleton) ──────────────────────────────────────────────
 
 _KREUZBERG_CONFIGS = None
 
@@ -176,16 +141,33 @@ _KREUZBERG_CONFIGS = None
 def _get_configs():
     global _KREUZBERG_CONFIGS
     if _KREUZBERG_CONFIGS is None:
-        _KREUZBERG_CONFIGS = _build_kreuzberg_configs()
+        import kreuzberg
+        tess = kreuzberg.TesseractConfig(
+            language="ara+eng", oem=1, psm=3, min_confidence=0.3,
+        )
+        ocr    = kreuzberg.OcrConfig(backend="tesseract", tesseract_config=tess)
+        layout = kreuzberg.LayoutDetectionConfig(
+            apply_heuristics=True, table_model="tatr", confidence_threshold=0.5,
+        )
+        acc    = kreuzberg.AccelerationConfig(provider="cpu")
+        pdf    = kreuzberg.PdfConfig(allow_single_column_tables=True, extract_metadata=True)
+        lang   = kreuzberg.LanguageDetectionConfig(
+            enabled=True, detect_multiple=True, min_confidence=0.5,
+        )
+        base = dict(ocr=ocr, layout=layout, acceleration=acc,
+                    include_document_structure=True, pdf_options=pdf, language_detection=lang)
+        _KREUZBERG_CONFIGS = (
+            kreuzberg.ExtractionConfig(**base),
+            kreuzberg.ExtractionConfig(**base, force_ocr=True),
+        )
     return _KREUZBERG_CONFIGS
 
 
-# ── Public parse function ─────────────────────────────────────────────────────
+# ── Parser ────────────────────────────────────────────────────────────────────
 
 def parse(path: Path) -> ParseResult:
     try:
         import kreuzberg
-
         cfg_normal, cfg_force = _get_configs()
 
         r    = kreuzberg.extract_file_sync(str(path), config=cfg_normal)
@@ -198,41 +180,41 @@ def parse(path: Path) -> ParseResult:
         doc  = getattr(r, "document", None)
         text = _render_document(doc, flat)
 
-        tables  = getattr(r, "tables", None) or []
-        langs   = getattr(r, "detected_languages", None)
+        tables = getattr(r, "tables", None) or []
+        langs  = getattr(r, "detected_languages", None)
 
         try:
             pages = r.get_page_count()
         except Exception:
             pages = None
 
-        header = _make_header(path, "kreuzberg", pages, langs)
+        lang_str  = f"\nlanguages: {', '.join(str(l) for l in langs)}" if langs else ""
+        pages_str = f"\npages: {pages}" if pages is not None else ""
+        header = f"---\nsource: {path.name}\nparser: kreuzberg{pages_str}{lang_str}\n---\n\n"
+
         return ParseResult(
-            source=path,
-            parser="kreuzberg",
-            content=header + text,
-            page_count=pages,
-            extras={"detected_languages": langs, "table_count": len(tables)},
+            source=path, parser="kreuzberg",
+            content=header + text, page_count=pages,
+            extras={"table_count": len(tables)},
         )
 
     except Exception as exc:
-        return ParseResult(
-            source=path, parser="kreuzberg", content="",
-            error=str(exc),
-        )
+        return ParseResult(source=path, parser="kreuzberg", content="", error=str(exc))
 
 
-def _make_header(path: Path, parser: str, pages: int | None, langs) -> str:
-    lang_str = ""
-    if langs:
-        try:
-            lang_str = f"\nlanguages: {', '.join(str(l) for l in langs)}"
-        except Exception:
-            pass
-    pages_str = f"\npages: {pages}" if pages is not None else ""
-    return (
-        f"---\n"
-        f"source: {path.name}\n"
-        f"parser: {parser}{pages_str}{lang_str}\n"
-        f"---\n\n"
-    )
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main() -> None:
+    p = argparse.ArgumentParser()
+    p.add_argument("--input",      type=Path, required=True)
+    p.add_argument("--output-dir", type=Path, required=True)
+    args = p.parse_args()
+
+    result = parse(args.input)
+    if result.ok:
+        result.save(args.output_dir)
+    result.emit()
+
+
+if __name__ == "__main__":
+    main()

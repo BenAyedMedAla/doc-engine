@@ -12,21 +12,9 @@ This directory (`engine-py/`) is one of three sibling implementations in the `do
 | **Rust Orchestrator** | `../py-rs-version/` | Larger corpora, lower memory, no recompile for parser changes |
 | **Deployable API** | `../deployable version/` | Production — FastAPI + Celery + Redis + Docker Compose |
 
-All three share the same classification/routing logic conceptually, but **the actual parser scripts executed at runtime by this Python CLI live in `../py-rs-version/parsers/`, not in `engine-py/parsers/`.**
+`engine-py/` is **fully self-contained**: `pipeline.py` dispatches each file by running a parser script as a subprocess from its own local `./parsers/` directory (`_PARSERS_DIR = Path(__file__).parent / "parsers"`). If you're asked to change parsing behavior (OCR logic, Markdown/text rendering, prompts, fallback behavior, etc.) for this CLI, edit the scripts in `engine-py/parsers/` — that's the only copy that matters here.
 
-## Critical gotcha: two `parsers/` directories
-
-`pipeline.py` dispatches each file by running a parser script as a subprocess:
-
-```python
-_PARSERS_DIR = Path(__file__).parent.parent / "py-rs-version" / "parsers"
-```
-
-It only ever imports one thing from the local `engine-py/parsers/` package — the `ParseResult` dataclass in `parsers/__init__.py`. The parsing logic in `engine-py/parsers/office.py`, `docling_parser.py`, and `vlm_parser.py` is **not on the execution path** — those are effectively a stale/duplicate copy. The scripts that actually run are `../py-rs-version/parsers/office_parser.py`, `docling_parser.py`, and `vlm_parser.py` (invoked via `sys.executable <script> --input ... --output-dir ...`, one Python interpreter per file, no shared GIL).
-
-**If you're asked to change parsing behavior (OCR logic, Markdown rendering, prompts, etc.), edit the scripts in `../py-rs-version/parsers/`, not `engine-py/parsers/`.** Verify which copy is live with `grep -rn "_PARSERS_DIR\|_SCRIPT" pipeline.py` before assuming otherwise — this indirection is easy to miss since the two files are near-identical.
-
-The `../py-rs-version/parsers/*.py` scripts are also invoked by the Rust orchestrator, so changes there affect both implementations.
+`../py-rs-version/parsers/` holds its **own independent copy** of the same four scripts (`common.py`, `office_parser.py`, `docling_parser.py`, `vlm_parser.py`), used only by the Rust orchestrator. The two copies started identical but are not kept in sync automatically — a parsing-logic fix made in one does not propagate to the other. If a fix needs to apply to both implementations, it has to be applied twice.
 
 ## Commands
 

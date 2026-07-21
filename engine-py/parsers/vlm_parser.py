@@ -1,36 +1,31 @@
 #!/usr/bin/env python3
 """
-VLM parser — scanned PDFs and raw images → structured Markdown.
+VLM parser — scanned PDFs and images → structured Markdown.
+Invoked as a subprocess by pipeline.py.
 
-Sends each page (rendered at IMAGE_DPI) to an OpenAI-compatible vision API
-(vLLM serving Qwen3-VL or similar).  Pages are dispatched in parallel via a
-thread pool; results are reassembled in order and combined into one document.
+Pages are rendered at IMAGE_DPI and sent to an OpenAI-compatible vision
+endpoint (vLLM).  Requests are dispatched in parallel via a thread pool.
 
-The SYSTEM_PROMPT instructs the model to:
-  1. Identify the document type (certificate, invoice, contract, …)
-  2. Catalogue every non-text visual element (stamps, signatures, logos,
-     watermarks, barcodes, QR codes, seals, …) with location and description
-  3. Reproduce all text faithfully — preserving Arabic RTL, rendering tables
-     as GFM pipe-tables, using ## / ### for section headings
+Usage:
+  python3 vlm_parser.py --input <file> --output-dir <dir> [VLM options]
 
-Multi-page strategy:
-  - Page 1: full prompt (metadata + content)
-  - Pages 2+: content-only prompt (no repeated metadata block)
-  - Final output: YAML front-matter + combined page sections
+Prints one JSON line to stdout on completion (read by the orchestrator).
 """
 from __future__ import annotations
 
+import argparse
 import base64
 import io
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+import sys
 
-from config import Config
-from parsers import ParseResult
+sys.path.insert(0, str(Path(__file__).parent))
+from common import ParseResult
 
-# ── Bidi helper ───────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 _BIDI = re.compile(r"[\u200E\u200F\u202A-\u202E\u2066-\u2069؜﻿]")
 
@@ -40,7 +35,7 @@ def _strip_bidi(text: str) -> str:
 
 
 def _count_md_tables(text: str) -> int:
-    in_table, count = False, 0
+    in_table = count = 0
     for line in text.splitlines():
         is_row = line.strip().startswith("|") and line.strip().endswith("|")
         if is_row and not in_table:
@@ -115,127 +110,129 @@ Rules:
 """
 
 
-# ── Image helpers ─────────────────────────────────────────────────────────────
+# ── Image encoding ────────────────────────────────────────────────────────────
 
-def _pil_to_b64_url(img) -> str:
+def _pil_to_b64(img) -> str:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
-    b64 = base64.standard_b64encode(buf.getvalue()).decode()
-    return f"data:image/png;base64,{b64}"
+    return "data:image/png;base64," + base64.standard_b64encode(buf.getvalue()).decode()
 
 
-def _bytes_to_b64_url(data: bytes) -> str:
-    b64 = base64.standard_b64encode(data).decode()
-    return f"data:image/png;base64,{b64}"
-
-
-def _pdf_page_to_b64_url(path: Path, page_idx: int, dpi: int) -> str:
+def _pdf_page_to_pil(path: Path, page_idx: int, dpi: int):
     import pypdfium2 as pdfium
     doc    = pdfium.PdfDocument(str(path))
     page   = doc[page_idx]
-    scale  = dpi / 72.0
-    bitmap = page.render(scale=scale)
-    pil_img = bitmap.to_pil()
+    bitmap = page.render(scale=dpi / 72.0)
+    pil    = bitmap.to_pil()
     doc.close()
-    return _pil_to_b64_url(pil_img)
+    return pil
 
 
-def _image_to_b64_url(path: Path) -> str:
+def _image_to_pil(path: Path):
     from PIL import Image
-    img = Image.open(str(path))
-    return _pil_to_b64_url(img)
+    return Image.open(str(path)).convert("RGB")
+
+
+# ── CPU OCR fallback (used when the VLM request fails after all retries) ──────
+# Keeps a page from silently coming back empty when the GPU/vLLM server has a
+# problem — degrades to local Tesseract OCR instead of losing the page.
+
+def _cpu_ocr_fallback(pil_img) -> str:
+    import subprocess
+    import tempfile
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
+            pil_img.save(tmp.name, format="PNG")
+            proc = subprocess.run(
+                ["tesseract", tmp.name, "stdout", "-l", "ara+eng", "--psm", "3"],
+                capture_output=True, text=True, timeout=120,
+            )
+        text = (proc.stdout or "").strip()
+        return text if text else "*(CPU OCR fallback produced no text)*"
+    except Exception as exc:
+        return f"*(CPU OCR fallback also failed: {exc})*"
+
+
+def _call_page_with_fallback(client, args, pil_img, is_first: bool) -> tuple[str, bool]:
+    """Returns (content, used_cpu_fallback)."""
+    b64_url = _pil_to_b64(pil_img)
+    try:
+        return _call_page(client, args, b64_url, is_first), False
+    except Exception as exc:
+        print(f"    [vlm] page error, falling back to CPU OCR: {exc}", file=sys.stderr)
+        ocr_text = _cpu_ocr_fallback(pil_img)
+        note = (
+            "> ⚠ VLM request failed — recovered via CPU OCR fallback (Tesseract).\n"
+            "> Visual-element detection and table structure are unavailable for this page.\n\n"
+        )
+        return note + ocr_text, True
 
 
 # ── VLM API call ──────────────────────────────────────────────────────────────
 
-def _call_vision(
-    client,
-    model: str,
-    b64_url: str,
-    prompt: str,
-    max_tokens: int,
-    retry_attempts: int,
-    retry_backoff: float,
-    extra_body: dict | None = None,
-) -> str:
-    last_exc: Exception | None = None
-    for attempt in range(retry_attempts):
+def _call_vision(client, model, b64_url, prompt, max_tokens, retries, backoff) -> str:
+    last_exc = None
+    for attempt in range(retries):
         try:
             resp = client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT if prompt is SYSTEM_PROMPT else ""},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "image_url", "image_url": {"url": b64_url}},
-                            {"type": "text",      "text": prompt},
-                        ],
-                    },
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": [
+                        {"type": "image_url", "image_url": {"url": b64_url}},
+                        {"type": "text",      "text": prompt},
+                    ]},
                 ],
                 max_tokens=max_tokens,
                 temperature=0,
                 timeout=180,
-                **({"extra_body": extra_body} if extra_body else {}),
+                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             )
             return resp.choices[0].message.content or ""
         except Exception as exc:
             last_exc = exc
-            if attempt < retry_attempts - 1:
-                time.sleep(retry_backoff ** attempt)
-    raise last_exc  # type: ignore[misc]
+            if attempt < retries - 1:
+                time.sleep(backoff ** attempt)
+    raise last_exc
 
 
-def _call_page(
-    client, cfg: Config, b64_url: str, is_first: bool
-) -> str:
+def _call_page(client, args, b64_url: str, is_first: bool) -> str:
     prompt = (
-        "Analyse this document page fully. "
-        "Follow the output format in the system prompt exactly."
-        if is_first
-        else CONTENT_ONLY_PROMPT
+        "Analyse this document page fully. Follow the output format in the system prompt exactly."
+        if is_first else CONTENT_ONLY_PROMPT
     )
-    # Qwen3 thinking mode: disable for deterministic extraction
-    extra = {"chat_template_kwargs": {"enable_thinking": False}}
     return _call_vision(
-        client, cfg.vlm_model, b64_url, prompt,
-        cfg.vlm_max_tokens, cfg.vlm_retry_attempts, cfg.vlm_retry_backoff,
-        extra_body=extra,
+        client, args.vlm_model, b64_url, prompt,
+        args.vlm_tokens, args.vlm_retries, args.vlm_backoff,
     )
 
 
-# ── PDF extraction (parallel pages) ──────────────────────────────────────────
+# ── PDF / image extraction ────────────────────────────────────────────────────
 
-def _extract_pdf(client, cfg: Config, path: Path) -> tuple[str, int, int]:
-    """Returns (combined_markdown, table_count, page_count)."""
+def _extract_pdf(client, args, path: Path) -> tuple[str, int, int, bool]:
     import pypdfium2 as pdfium
-
     doc        = pdfium.PdfDocument(str(path))
     page_count = len(doc)
     doc.close()
 
-    # Pre-render all pages (fast, local, no network)
-    b64_urls: list[str] = []
-    for i in range(page_count):
-        b64_urls.append(_pdf_page_to_b64_url(path, i, cfg.vlm_image_dpi))
+    pil_pages = [_pdf_page_to_pil(path, i, args.vlm_dpi) for i in range(page_count)]
 
-    # Parallel VLM calls — preserve order via index
     results: list[str] = [""] * page_count
-    with ThreadPoolExecutor(max_workers=cfg.vlm_max_workers) as pool:
+    fallback_used = [False] * page_count
+    with ThreadPoolExecutor(max_workers=args.vlm_workers) as pool:
         futures = {
-            pool.submit(_call_page, client, cfg, url, i == 0): i
-            for i, url in enumerate(b64_urls)
+            pool.submit(_call_page_with_fallback, client, args, img, i == 0): i
+            for i, img in enumerate(pil_pages)
         }
         for future in as_completed(futures):
             idx = futures[future]
             try:
-                results[idx] = future.result()
+                results[idx], fallback_used[idx] = future.result()
             except Exception as exc:
-                print(f"    [vlm] page {idx + 1} error: {exc}")
-                results[idx] = f"\n\n> ⚠ Page {idx + 1} extraction failed: {exc}\n\n"
+                print(f"    [vlm] page {idx + 1} failed completely: {exc}", file=sys.stderr)
+                results[idx] = f"\n\n> ⚠ Page {idx + 1} extraction failed (VLM and CPU fallback both failed): {exc}\n\n"
+                fallback_used[idx] = True
 
-    # Combine pages: first page already has metadata block; subsequent pages
-    # get a thin separator
     parts: list[str] = []
     for i, text in enumerate(results):
         if not text.strip():
@@ -244,49 +241,70 @@ def _extract_pdf(client, cfg: Config, path: Path) -> tuple[str, int, int]:
             parts.append(f"\n\n---\n*Page {i + 1}*\n\n")
         parts.append(text)
 
-    combined    = _strip_bidi("".join(parts))
-    table_count = _count_md_tables(combined)
-    return combined, table_count, page_count
+    combined = _strip_bidi("".join(parts))
+    return combined, _count_md_tables(combined), page_count, any(fallback_used)
 
 
-def _extract_image(client, cfg: Config, path: Path) -> tuple[str, int, int]:
-    b64_url = _image_to_b64_url(path)
-    text    = _strip_bidi(_call_page(client, cfg, b64_url, is_first=True))
-    return text, _count_md_tables(text), 1
+def _extract_image(client, args, path: Path) -> tuple[str, int, int, bool]:
+    pil_img = _image_to_pil(path)
+    text, used_fallback = _call_page_with_fallback(client, args, pil_img, is_first=True)
+    text = _strip_bidi(text)
+    return text, _count_md_tables(text), 1, used_fallback
 
 
-# ── Public parse function ─────────────────────────────────────────────────────
+# ── Parser ────────────────────────────────────────────────────────────────────
 
-def parse(path: Path, cfg: Config) -> ParseResult:
+def parse(path: Path, args) -> ParseResult:
     try:
         import openai
-        client = openai.OpenAI(base_url=cfg.vlm_base_url, api_key="none")
+        client = openai.OpenAI(base_url=args.vlm_url, api_key="none")
 
         suf = path.suffix.lower()
         if suf == ".pdf":
-            content, table_count, page_count = _extract_pdf(client, cfg, path)
+            content, table_count, page_count, used_fallback = _extract_pdf(client, args, path)
         else:
-            content, table_count, page_count = _extract_image(client, cfg, path)
+            content, table_count, page_count, used_fallback = _extract_image(client, args, path)
 
         header = (
             f"---\n"
             f"source: {path.name}\n"
             f"parser: vlm\n"
-            f"model: {cfg.vlm_model}\n"
+            f"model: {args.vlm_model}\n"
             f"pages: {page_count}\n"
+            f"cpu_fallback: {used_fallback}\n"
             f"---\n\n"
         )
 
         return ParseResult(
-            source=path,
-            parser="vlm",
-            content=header + content,
-            page_count=page_count,
-            extras={"table_count": table_count, "model": cfg.vlm_model},
+            source=path, parser="vlm",
+            content=header + content, page_count=page_count,
+            extras={"table_count": table_count, "cpu_fallback": used_fallback},
         )
 
     except Exception as exc:
-        return ParseResult(
-            source=path, parser="vlm", content="",
-            error=str(exc),
-        )
+        return ParseResult(source=path, parser="vlm", content="", error=str(exc))
+
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main() -> None:
+    p = argparse.ArgumentParser()
+    p.add_argument("--input",      type=Path,  required=True)
+    p.add_argument("--output-dir", type=Path,  required=True)
+    p.add_argument("--vlm-url",     default="http://127.0.0.1:8000/v1")
+    p.add_argument("--vlm-model",   default="Qwen/Qwen3.5-9B")
+    p.add_argument("--vlm-tokens",  type=int,   default=8192)
+    p.add_argument("--vlm-dpi",     type=int,   default=200)
+    p.add_argument("--vlm-workers", type=int,   default=4)
+    p.add_argument("--vlm-retries", type=int,   default=3)
+    p.add_argument("--vlm-backoff", type=float, default=2.0)
+    args = p.parse_args()
+
+    result = parse(args.input, args)
+    if result.ok:
+        result.save(args.output_dir)
+    result.emit()
+
+
+if __name__ == "__main__":
+    main()
