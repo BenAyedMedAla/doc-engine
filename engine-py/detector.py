@@ -23,8 +23,8 @@ class DocClass(Enum):
     PDF_VLM_TEXT    = auto()   # ≤ vlm_text_threshold pages (4), text → VLM
     PDF_SHORT_TEXT  = auto()   # (4, 200] pages, text → Docling
     PDF_SHORT_SCAN  = auto()   # ≤ scanned_long_threshold pages (20), scanned → VLM
-    PDF_LONG_TEXT   = auto()   # > 50 pages, text → VLM (head+tail)
-    PDF_LONG_SCAN   = auto()   # > 20 pages, scanned → VLM (head+tail)
+    PDF_LONG_TEXT   = auto()   # > long_pdf_threshold pages (200), text → VLM (head+tail)
+    PDF_LONG_SCAN   = auto()   # > scanned_long_threshold pages (20), scanned → VLM (head+tail)
     UNKNOWN         = auto()
 
 

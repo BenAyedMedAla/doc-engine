@@ -195,7 +195,7 @@ def run(
         if cls == DocClass.UNKNOWN:
             return ParseResult(
                 source=original_path, parser="none", content="",
-                error="unreadable PDF (encrypted or corrupted)",
+                error="unreadable PDF (encrypted or corrupted) or unrecognised extension",
             )
         with _semaphore_for(cls):
             result = _process_file(parse_path, cls, original_path, cfg)

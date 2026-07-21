@@ -11,7 +11,7 @@ from pathlib import Path
 
 OFFICE_EXTENSIONS = frozenset({
     ".docx", ".doc", ".odt", ".rtf",
-    ".xlsx", ".xls", ".ods",
+    ".xlsx", ".xls", ".ods", ".csv",
     ".pptx", ".ppt", ".odp",
 })
 

@@ -107,12 +107,18 @@ def main() -> None:
 
     if args.file:
         # Single-file mode — classify and process directly
-        from detector import classify
+        from detector import DocClass, classify
         from pipeline import _process_file
         cfg.ensure_dirs()
         path = args.file.resolve()
         cls  = classify(path, cfg)
         print(f"\n  Single file: {path.name}  [{cls.name}]")
+        if cls == DocClass.UNKNOWN:
+            # Matches pipeline.run()'s _dispatch() guard — don't hand an
+            # unreadable/unrecognised file to vlm_parser.py just because it's
+            # the fallback script for every non-Office/non-Docling class.
+            print("  ERROR: unreadable PDF (encrypted or corrupted) or unrecognised extension", file=sys.stderr)
+            sys.exit(1)
         result = _process_file(path, cls, path, cfg)
         if result.ok:
             print(f"  Saved → {cfg.output_dir / (path.stem + '.txt')}")

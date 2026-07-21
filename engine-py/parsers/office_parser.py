@@ -119,18 +119,32 @@ def _render_nodes(nodes: list, indices: list[int], depth: int = 0) -> str:
     return "\n\n".join(p for p in parts if p)
 
 
-def _render_document(doc: dict | None, fallback: str) -> str:
-    if not doc or not isinstance(doc, dict):
-        return fallback
-    nodes = doc.get("nodes", [])
-    if not nodes:
-        return fallback
-    all_children: set[int] = set()
-    for node in nodes:
-        all_children.update(node.get("children", []))
-    roots = [i for i in range(len(nodes)) if i not in all_children]
-    rendered = _render_nodes(nodes, roots)
-    return _strip_bidi(rendered) if rendered.strip() else fallback
+def _tables_to_markdown(tables: list) -> str:
+    return "\n\n".join(
+        md for t in tables if (md := (getattr(t, "markdown", "") or "").strip())
+    )
+
+
+def _render_document(doc: dict | None, fallback: str, tables: list | None = None) -> str:
+    if doc and isinstance(doc, dict) and doc.get("nodes"):
+        nodes = doc["nodes"]
+        all_children: set[int] = set()
+        for node in nodes:
+            all_children.update(node.get("children", []))
+        roots = [i for i in range(len(nodes)) if i not in all_children]
+        rendered = _render_nodes(nodes, roots)
+        if rendered.strip():
+            return _strip_bidi(rendered)
+
+    # No structured tree (e.g. CSV — Kreuzberg detects it as a table but
+    # doesn't build a document tree for it) — use the table's own Markdown
+    # instead of falling all the way back to flat, non-tabular text.
+    if tables:
+        table_md = _tables_to_markdown(tables)
+        if table_md:
+            return table_md
+
+    return fallback
 
 
 # ── Kreuzberg config (singleton) ──────────────────────────────────────────────
@@ -177,10 +191,10 @@ def parse(path: Path) -> ParseResult:
             r    = kreuzberg.extract_file_sync(str(path), config=cfg_force)
             flat = _strip_bidi(getattr(r, "content", "") or "")
 
-        doc  = getattr(r, "document", None)
-        text = _render_document(doc, flat)
-
         tables = getattr(r, "tables", None) or []
+        doc    = getattr(r, "document", None)
+        text   = _render_document(doc, flat, tables)
+
         langs  = getattr(r, "detected_languages", None)
 
         try:
