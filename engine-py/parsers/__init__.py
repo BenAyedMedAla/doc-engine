@@ -1,34 +1,16 @@
 #!/usr/bin/env python3
 """
-Shared result type returned by every parser.
+Parser package for engine-py.
+
+ParseResult is defined once in common.py (not here) because the parser
+scripts in this package are invoked as standalone subprocesses — each does
+`sys.path.insert(0, <this dir>); from common import ParseResult` as a flat
+module import, since a subprocess has no notion of the enclosing `parsers`
+package. This re-export lets pipeline.py (running in-process) use the same
+class via the normal `from parsers import ParseResult` package import.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from pathlib import Path
+from .common import ParseResult
 
-
-@dataclass
-class ParseResult:
-    source: Path
-    parser: str          # "kreuzberg" | "docling" | "vlm"
-    content: str         # full structured Markdown
-    page_count: int | None = None
-    extras: dict = field(default_factory=dict)
-    error: str | None = None
-
-    @property
-    def ok(self) -> bool:
-        return self.error is None
-
-    def save(self, output_dir: Path) -> Path:
-        """Write content to <output_dir>/<stem>.txt, deduplicating if needed."""
-        output_dir.mkdir(parents=True, exist_ok=True)
-        out = output_dir / (self.source.stem + ".txt")
-        if out.exists():
-            i = 1
-            while out.exists():
-                out = output_dir / f"{self.source.stem}_{i}.txt"
-                i += 1
-        out.write_text(self.content, encoding="utf-8")
-        return out
+__all__ = ["ParseResult"]
