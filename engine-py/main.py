@@ -113,9 +113,9 @@ def main() -> None:
         path = args.file.resolve()
         cls  = classify(path, cfg)
         print(f"\n  Single file: {path.name}  [{cls.name}]")
-        result = _process_file(path, cls, cfg, cfg.output_dir)
+        result = _process_file(path, cls, path, cfg)
         if result.ok:
-            print(f"  Saved → {cfg.output_dir / (path.stem + '.md')}")
+            print(f"  Saved → {cfg.output_dir / (path.stem + '.txt')}")
         else:
             print(f"  ERROR: {result.error}", file=sys.stderr)
             sys.exit(1)
